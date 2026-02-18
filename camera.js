@@ -11,11 +11,13 @@ const CameraRecognizer = {
 
     /**
      * Tesseract.js ワーカーを初期化（バックグラウンドで準備）
+     * Tesseract.js v5 API対応
      */
     async initWorker() {
         if (this.worker) return;
         try {
-            this.worker = await Tesseract.createWorker('eng', 1, {
+            // v5: createWorkerはオプションオブジェクトのみ受け取る
+            this.worker = await Tesseract.createWorker({
                 logger: m => {
                     if (m.status === 'recognizing text') {
                         const pct = Math.round(m.progress * 100);
@@ -24,17 +26,23 @@ const CameraRecognizer = {
                     }
                 }
             });
+            // v5: loadLanguage → initialize の順で呼び出す
+            await this.worker.loadLanguage('eng');
+            await this.worker.initialize('eng');
             // 数字のみ認識
             await this.worker.setParameters({
                 tessedit_char_whitelist: '0123456789',
                 tessedit_pageseg_mode: '6'
             });
             this.isWorkerReady = true;
+            console.log('Tesseract初期化完了');
         } catch (e) {
             console.error('Tesseract初期化エラー:', e);
             this.worker = null;
+            throw e; // 呼び出し元でもエラーを受け取れるよう再スロー
         }
     },
+
 
     /**
      * カメラを起動してプレビューを開始
