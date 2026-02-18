@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="麻雀大会用点数計算アプリケーション">
+  <meta name="theme-color" content="#0f172a">
+  <title>麻雀点数計算アプリ</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Apple Touch Icon -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+
+<body>
+  <div class="container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <h1>🀄 麻雀点数計算</h1>
+      <p>大会用条件計算ツール</p>
+    </header>
+
+    <!-- ルール選択画面 -->
+    <div id="rule-selection-screen" class="screen">
+      <div class="card">
+        <h2 class="card-title">ルールを選択してください</h2>
+
+        <div class="grid grid-2">
+          <div class="rule-card" data-rule="official">
+            <h3>日本プロ麻雀連盟</h3>
+            <p>公式ルール</p>
+            <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              12点加減方式<br>
+              1人浮き: +12.0 -1.0 -3.0 -8.0<br>
+              2人浮き: +8.0 +4.0 -4.0 -8.0<br>
+              3人浮き: +8.0 +3.0 +1.0 -12.0<br>
+              同着折半
+            </p>
+          </div>
+
+          <div class="rule-card" data-rule="wrc">
+            <h3>WRCルール</h3>
+            <p>World Riichi Championship</p>
+            <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              1着: +15<br>
+              2着: +5<br>
+              3着: -5<br>
+              4着: -15<br>
+              同点分割
+            </p>
+          </div>
+
+          <div class="rule-card" data-rule="wrcR">
+            <h3>WRC-Rルール</h3>
+            <p>World Riichi Championship - Revised</p>
+            <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              1着: +30<br>
+              2着: +15<br>
+              3着: -15<br>
+              4着: -30<br>
+              同点分割
+            </p>
+          </div>
+        </div>
+
+        <button id="confirm-rule-btn" class="btn btn-primary btn-block mt-lg" disabled>
+          このルールで開始
+        </button>
+      </div>
+    </div>
+
+    <!-- スコア入力画面 -->
+    <div id="score-input-screen" class="screen hidden">
+      <div class="card">
+        <h2 class="card-title">スコア入力</h2>
+
+        <!-- プレイヤー名 -->
+        <div class="form-group">
+          <label class="form-label">プレイヤー名</label>
+          <div class="grid grid-4">
+            <input type="text" id="player-0-name" class="form-input" placeholder="東家">
+            <input type="text" id="player-1-name" class="form-input" placeholder="南家">
+            <input type="text" id="player-2-name" class="form-input" placeholder="西家">
+            <input type="text" id="player-3-name" class="form-input" placeholder="北家">
+          </div>
+        </div>
+
+        <!-- 3回戦終了時スコア -->
+        <div class="form-group">
+          <label class="form-label">3回戦終了時スコア（累計）</label>
+          <div class="grid grid-4">
+            <input type="number" id="round3-total-player0" class="form-input" placeholder="東家" value="0">
+            <input type="number" id="round3-total-player1" class="form-input" placeholder="南家" value="0">
+            <input type="number" id="round3-total-player2" class="form-input" placeholder="西家" value="0">
+            <input type="number" id="round3-total-player3" class="form-input" placeholder="北家" value="0">
+          </div>
+        </div>
+
+        <!-- オーラス現在スコア -->
+        <div class="form-group">
+          <label class="form-label">オーラス現在スコア</label>
+          <div class="grid grid-4">
+            <input type="number" id="current-player0" class="form-input" placeholder="東家" required>
+            <input type="number" id="current-player1" class="form-input" placeholder="南家" required>
+            <input type="number" id="current-player2" class="form-input" placeholder="西家" required>
+            <input type="number" id="current-player3" class="form-input" placeholder="北家" required>
+          </div>
+        </div>
+
+        <!-- 親の位置 -->
+        <div class="form-group">
+          <label class="form-label">親の位置</label>
+          <div class="grid grid-4">
+            <label
+              style="display: flex; align-items: center; gap: var(--spacing-sm); color: var(--color-text-secondary);">
+              <input type="radio" name="dealer" value="0" checked> 東家
+            </label>
+            <label
+              style="display: flex; align-items: center; gap: var(--spacing-sm); color: var(--color-text-secondary);">
+              <input type="radio" name="dealer" value="1"> 南家
+            </label>
+            <label
+              style="display: flex; align-items: center; gap: var(--spacing-sm); color: var(--color-text-secondary);">
+              <input type="radio" name="dealer" value="2"> 西家
+            </label>
+            <label
+              style="display: flex; align-items: center; gap: var(--spacing-sm); color: var(--color-text-secondary);">
+              <input type="radio" name="dealer" value="3"> 北家
+            </label>
+          </div>
+        </div>
+
+        <!-- 立直棒・積み棒 -->
+        <div class="form-group">
+          <div class="grid grid-2">
+            <div>
+              <label class="form-label">立直棒</label>
+              <input type="number" id="riichi-sticks" class="form-input" value="0" min="0">
+            </div>
+            <div>
+              <label class="form-label">積み棒</label>
+              <input type="number" id="honba-sticks" class="form-input" value="0" min="0">
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-2 mt-lg">
+          <button id="back-to-rule-btn" class="btn btn-secondary">
+            ルール選択に戻る
+          </button>
+          <button id="calculate-btn" class="btn btn-primary">
+            計算する
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 結果表示画面 -->
+    <div id="results-screen" class="screen hidden">
+      <div class="card">
+        <h2 class="card-title">計算結果</h2>
+        <div id="results-container"></div>
+
+        <button id="back-to-input-btn" class="btn btn-secondary btn-block mt-lg">
+          入力画面に戻る
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="scoreTable.js"></script>
+  <script src="rules.js"></script>
+  <script src="calculator.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js')
+          .then(reg => console.log('Service Worker registered'))
+          .catch(err => console.log('Service Worker registration failed'));
+      });
+    }
+  </script>
+</body>
+
+</html>

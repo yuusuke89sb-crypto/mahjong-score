@@ -1,0 +1,12 @@
+{
+  "name": "mahjong-score-calculator",
+  "version": "1.0.0",
+  "description": "麻雀大会用点数計算アプリケーション",
+  "scripts": {
+    "dev": "npx -y serve .",
+    "start": "npx -y serve ."
+  },
+  "keywords": ["mahjong", "calculator", "tournament", "pwa"],
+  "author": "",
+  "license": "MIT"
+}

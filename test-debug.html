@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <title>JavaScript Error Test</title>
+</head>
+
+<body>
+    <h1>JavaScript Console Test</h1>
+    <p>Open browser console (F12) to see if scripts load correctly</p>
+
+    <script src="scoreTable.js"></script>
+    <script src="rules.js"></script>
+    <script src="calculator.js"></script>
+    <script src="app.js"></script>
+
+    <script>
+        console.log('ScoreTable:', typeof ScoreTable);
+        console.log('MahjongRules:', typeof MahjongRules);
+        console.log('Calculator:', typeof Calculator);
+        console.log('App:', typeof App);
+
+        // Test data
+        const testGameState = {
+            rule: 'official',
+            players: ['東家', '南家', '西家', '北家'],
+            round3TotalScores: [0, 0, 0, 0],
+            currentScores: [35000, 28000, 32000, 25000],
+            dealerIndex: 0,
+            riichiSticks: 0,
+            honbaSticks: 0
+        };
+
+        console.log('Testing calculation...');
+        try {
+            const results = Calculator.calculateWinConditions(testGameState);
+            console.log('Calculation successful!', results);
+        } catch (error) {
+            console.error('Calculation error:', error);
+        }
+    </script>
+</body>
+
+</html>
