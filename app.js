@@ -114,8 +114,16 @@ const App = {
             const results = Calculator.calculateWinConditions(this.gameState);
             console.log('計算結果:', results);
 
+            // 放銃限度計算（各プレイヤーが誰に何点まで放銃しても2位以内を維持できるか）
+            const ronLimits = results.map(r => ({
+                playerIndex: r.playerIndex,
+                currentRank: r.currentRank,
+                limits: Calculator.calcMaxRonAllowed(this.gameState, r.playerIndex)
+            }));
+            console.log('放銃限度:', ronLimits);
+
             // 結果を表示
-            this.displayResults(results);
+            this.displayResults(results, ronLimits);
             console.log('結果表示完了');
 
             // 結果画面に遷移
@@ -191,7 +199,7 @@ const App = {
     /**
      * 結果を表示
      */
-    displayResults(results) {
+    displayResults(results, ronLimits) {
         const container = document.getElementById('results-container');
         container.innerHTML = '';
 
@@ -259,6 +267,14 @@ const App = {
                 html += this.formatCondition('2位になる条件', playerResult.conditions.fromFourthToSecond);
             }
 
+            // 放銃限度（1位・2位のプレイヤーのみ表示）
+            if (playerResult.currentRank <= 2) {
+                const ronLimit = ronLimits.find(r => r.playerIndex === playerResult.playerIndex);
+                if (ronLimit) {
+                    html += this.formatRonLimit(ronLimit.limits);
+                }
+            }
+
             playerDiv.innerHTML = html;
             container.appendChild(playerDiv);
         });
@@ -314,6 +330,41 @@ const App = {
                 }
             });
         }
+
+        html += `</div>`;
+        return html;
+    },
+
+    /**
+     * 放銃限度をフォーマット（2位以内で勝ち上がれる最大放銃点数）
+     */
+    formatRonLimit(limits) {
+        let html = `
+      <div class="condition-item" style="border-left: 3px solid var(--color-warning, #f59e0b);">
+        <h4>🛡️ 放銃限度（2位以内で勝ち上がれる条件）</h4>
+        <p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-bottom: var(--spacing-sm);">誰に何点まで放銃しても2位以内を維持できるか</p>
+    `;
+
+        limits.forEach(limit => {
+            const winnerName = this.gameState.players[limit.winnerIndex];
+            if (!limit.canSurvive) {
+                html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444);">
+          ${winnerName}への放銃: 現状すでに3位以下（放銃不可）
+        </p>`;
+            } else if (limit.maxAllowed === 0) {
+                html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444);">
+          ${winnerName}への放銃: 1点でも放銃すると3位以下
+        </p>`;
+            } else if (limit.maxAllowed >= 32000) {
+                html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e);">
+          ${winnerName}への放銃: 役満（32,000点）でも2位以内 ✓
+        </p>`;
+            } else {
+                html += `<p style="font-size: var(--font-size-sm);">
+          ${winnerName}への放銃: <strong>${limit.maxAllowed.toLocaleString()}点まで</strong>なら2位以内
+        </p>`;
+            }
+        });
 
         html += `</div>`;
         return html;

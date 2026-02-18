@@ -200,5 +200,82 @@ const Calculator = {
     getRankByTotal(totals, playerIndex) {
         const myTotal = totals[playerIndex].total;
         return totals.filter(t => t.total > myTotal).length + 1;
+    },
+
+    /**
+     * 2位以内で勝ち上がれる最大放銃点数を計算
+     * @param {Object} gameState - ゲーム状態
+     * @param {number} playerIndex - 放銃するプレイヤーのインデックス
+     * @returns {Array} 各放銃先ごとの最大放銃点数
+     */
+    calcMaxRonAllowed(gameState, playerIndex) {
+        const { currentScores, round3TotalScores } = gameState;
+        const ruleConfig = MahjongRules[gameState.rule];
+        const results = [];
+
+        for (let winnerIndex = 0; winnerIndex < 4; winnerIndex++) {
+            if (winnerIndex === playerIndex) continue;
+
+            // 放銃額を100点刻みで増やしながら、2位以内を維持できる最大値を探す
+            // 最大は役満（32000点）を超えない範囲で探索
+            const MAX_RON = 32000;
+            let maxAllowed = 0;
+            let canSurviveZero = true;
+
+            // まず0点放銃（現状維持）で2位以内かチェック
+            const baseOutcome = this.simulateOutcome(
+                currentScores, round3TotalScores, winnerIndex, 0,
+                { [playerIndex]: 0 }, ruleConfig
+            );
+            const baseRank = this.getRankFromOutcome(baseOutcome, playerIndex);
+            if (baseRank > 2) {
+                canSurviveZero = false;
+            }
+
+            if (canSurviveZero) {
+                // 二分探索で最大放銃点数を効率的に求める
+                let lo = 0;
+                let hi = MAX_RON;
+
+                while (lo < hi) {
+                    const mid = Math.floor((lo + hi + 100) / 200) * 100; // 100点刻み
+                    if (mid > hi) break;
+
+                    const outcome = this.simulateOutcome(
+                        currentScores, round3TotalScores, winnerIndex, mid,
+                        { [playerIndex]: mid }, ruleConfig
+                    );
+                    const rank = this.getRankFromOutcome(outcome, playerIndex);
+
+                    if (rank <= 2) {
+                        lo = mid;
+                        maxAllowed = mid;
+                    } else {
+                        hi = mid - 100;
+                    }
+                }
+            }
+
+            results.push({
+                winnerIndex,
+                maxAllowed,
+                canSurvive: canSurviveZero
+            });
+        }
+
+        return results;
+    },
+
+    /**
+     * シミュレーション結果から特定プレイヤーの順位を取得
+     */
+    getRankFromOutcome(outcome, playerIndex) {
+        const myTotal = outcome[playerIndex].total;
+        // 自分より高いスコアの人数 + 1 = 自分の順位
+        // 同点は上位扱い（同点で2位以内に入れない）
+        const higherCount = outcome.filter(o => o.total > myTotal).length;
+        const sameCount = outcome.filter(o => o.total === myTotal && o.playerIndex !== playerIndex).length;
+        // 同点の場合は不利な方（上位に数える）で計算
+        return higherCount + sameCount + 1;
     }
 };
