@@ -148,11 +148,11 @@ const MahjongRules = {
     },
 
     /**
-     * WRC-Rルール
+     * WRC-Rルール（RはRedの意味）
      */
     wrcR: {
         name: 'WRC-Rルール',
-        description: '順位点：1着+30、2着+15、3着-15、4着-30',
+        description: 'World Riichi Championship - Red　順位点：1着+30、2着+15、3着-15、4着-30',
         startingPoints: 30000,
         returnPoints: 30000,
         scoreTableRule: 'wrc', // 30符4翻は切り上げ満貫

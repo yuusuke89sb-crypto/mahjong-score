@@ -6,12 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="description" content="麻雀大会用点数計算アプリケーション">
   <meta name="theme-color" content="#0f172a">
-  <title>麻雀点数計算アプリ</title>
+  <title>麻雀条件計算アプリ</title>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tesseract.js (OCR) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css">
@@ -64,7 +67,7 @@
 
           <div class="rule-card" data-rule="wrcR">
             <h3>WRC-Rルール</h3>
-            <p>World Riichi Championship - Revised</p>
+            <p>World Riichi Championship - Red</p>
             <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
               1着: +30<br>
               2着: +15<br>
@@ -110,7 +113,11 @@
 
         <!-- オーラス現在スコア -->
         <div class="form-group">
-          <label class="form-label">オーラス現在スコア</label>
+          <div
+            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--spacing-sm);">
+            <label class="form-label" style="margin-bottom: 0;">オーラス現在スコア</label>
+            <button id="camera-btn" class="btn btn-camera" type="button">📷 カメラで読み取る</button>
+          </div>
           <div class="grid grid-4">
             <input type="number" id="current-player0" class="form-input" placeholder="東家" required>
             <input type="number" id="current-player1" class="form-input" placeholder="南家" required>
@@ -180,10 +187,78 @@
     </div>
   </div>
 
+  <!-- カメラモーダル -->
+  <div id="camera-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>📷 スコアを撮影</h3>
+        <button id="camera-close-btn" class="modal-close-btn">✕</button>
+      </div>
+      <div class="camera-preview-wrap">
+        <video id="camera-preview" class="camera-preview" autoplay playsinline muted></video>
+        <canvas id="camera-canvas" style="display:none;"></canvas>
+        <div class="camera-guide">4人分の点棒が見えるように撮影してください</div>
+      </div>
+      <button id="camera-capture-btn" class="btn btn-primary btn-block mt-lg">📸 撮影する</button>
+    </div>
+  </div>
+
+  <!-- OCR処理中モーダル -->
+  <div id="ocr-loading-modal" class="modal-overlay hidden">
+    <div class="modal-content" style="text-align:center; padding: var(--spacing-2xl);">
+      <div class="ocr-spinner"></div>
+      <p style="margin-top: var(--spacing-lg); font-size: var(--font-size-lg);">スコアを認識中...</p>
+      <div class="ocr-progress-track">
+        <div id="ocr-progress-bar" class="ocr-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 認識結果確認モーダル -->
+  <div id="ocr-result-modal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>✅ 認識結果の確認</h3>
+      </div>
+      <p style="color: var(--color-text-secondary); margin-bottom: var(--spacing-lg); font-size: var(--font-size-sm);">
+        認識した数値を確認・修正してください（100点未満は自動で切り捨て済み）</p>
+      <div class="grid grid-4" style="margin-bottom: var(--spacing-lg);">
+        <div>
+          <label class="form-label">東家</label>
+          <input type="number" id="ocr-score-0" class="form-input" step="100">
+        </div>
+        <div>
+          <label class="form-label">南家</label>
+          <input type="number" id="ocr-score-1" class="form-input" step="100">
+        </div>
+        <div>
+          <label class="form-label">西家</label>
+          <input type="number" id="ocr-score-2" class="form-input" step="100">
+        </div>
+        <div>
+          <label class="form-label">北家</label>
+          <input type="number" id="ocr-score-3" class="form-input" step="100">
+        </div>
+      </div>
+      <div id="ocr-total-check" class="ocr-total-check"></div>
+      <div class="grid grid-2 mt-lg">
+        <button id="ocr-cancel-btn" class="btn btn-secondary">キャンセル</button>
+        <button id="ocr-apply-btn" class="btn btn-primary">この値を使う</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- フッター -->
+  <footer
+    style="text-align: center; padding: 16px; color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: 8px;">
+    製作者：吉村　悠佑
+  </footer>
+
   <!-- Scripts -->
   <script src="scoreTable.js"></script>
   <script src="rules.js"></script>
   <script src="calculator.js"></script>
+  <script src="camera.js"></script>
   <script src="app.js"></script>
 
   <!-- Service Worker Registration -->

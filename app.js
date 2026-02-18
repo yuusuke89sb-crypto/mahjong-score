@@ -56,6 +56,34 @@ const App = {
         document.getElementById('back-to-rule-btn').addEventListener('click', () => {
             this.showScreen('rule-selection');
         });
+
+        // ===== カメラ認識 =====
+        document.getElementById('camera-btn').addEventListener('click', () => {
+            this.openCameraModal();
+        });
+
+        document.getElementById('camera-close-btn').addEventListener('click', () => {
+            this.closeCameraModal();
+        });
+
+        document.getElementById('camera-capture-btn').addEventListener('click', () => {
+            this.captureAndRecognize();
+        });
+
+        document.getElementById('ocr-cancel-btn').addEventListener('click', () => {
+            this.closeOcrResultModal();
+        });
+
+        document.getElementById('ocr-apply-btn').addEventListener('click', () => {
+            this.applyOcrScores();
+        });
+
+        // 認識結果モーダルの入力値変更時に合計チェックを更新
+        for (let i = 0; i < 4; i++) {
+            document.getElementById(`ocr-score-${i}`).addEventListener('input', () => {
+                this.updateOcrTotalCheck();
+            });
+        }
     },
 
     /**
@@ -328,6 +356,129 @@ const App = {
             case 2: return 'badge-warning';
             default: return 'badge-danger';
         }
+    },
+
+    // ============================================================
+    // カメラ認識機能
+    // ============================================================
+
+    /**
+     * カメラモーダルを開く
+     */
+    async openCameraModal() {
+        // Tesseractワーカーをバックグラウンドで初期化開始
+        if (!CameraRecognizer.isWorkerReady) {
+            CameraRecognizer.initWorker().catch(e => console.warn('Tesseract初期化失敗:', e));
+        }
+
+        document.getElementById('camera-modal').classList.remove('hidden');
+
+        const ok = await CameraRecognizer.startCamera();
+        if (!ok) {
+            alert('カメラを起動できませんでした。\nカメラの使用を許可してください。');
+            document.getElementById('camera-modal').classList.add('hidden');
+        }
+    },
+
+    /**
+     * カメラモーダルを閉じる
+     */
+    closeCameraModal() {
+        CameraRecognizer.stopCamera();
+        document.getElementById('camera-modal').classList.add('hidden');
+    },
+
+    /**
+     * 撮影してOCR実行
+     */
+    async captureAndRecognize() {
+        // カメラモーダルを閉じてローディングを表示
+        CameraRecognizer.stopCamera();
+        document.getElementById('camera-modal').classList.add('hidden');
+        document.getElementById('ocr-loading-modal').classList.remove('hidden');
+
+        // プログレスバーをリセット
+        const bar = document.getElementById('ocr-progress-bar');
+        if (bar) bar.style.width = '0%';
+
+        try {
+            // Tesseractが未準備なら待機
+            if (!CameraRecognizer.isWorkerReady) {
+                await CameraRecognizer.initWorker();
+            }
+
+            const scores = await CameraRecognizer.recognize();
+
+            document.getElementById('ocr-loading-modal').classList.add('hidden');
+
+            if (scores.length === 0) {
+                alert('数値を認識できませんでした。\n手動で入力してください。');
+                return;
+            }
+
+            this.showOcrResultModal(scores);
+
+        } catch (e) {
+            document.getElementById('ocr-loading-modal').classList.add('hidden');
+            console.error('OCRエラー:', e);
+            alert(`認識中にエラーが発生しました。\n手動で入力してください。\n\n${e.message}`);
+        }
+    },
+
+    /**
+     * 認識結果確認モーダルを表示
+     * @param {number[]} scores - 認識したスコアの配列
+     */
+    showOcrResultModal(scores) {
+        // 認識した値を入力欄に設定（4つに満たない場合は空欄）
+        for (let i = 0; i < 4; i++) {
+            const input = document.getElementById(`ocr-score-${i}`);
+            input.value = scores[i] !== undefined ? scores[i] : '';
+        }
+
+        this.updateOcrTotalCheck();
+        document.getElementById('ocr-result-modal').classList.remove('hidden');
+    },
+
+    /**
+     * 認識結果モーダルを閉じる
+     */
+    closeOcrResultModal() {
+        document.getElementById('ocr-result-modal').classList.add('hidden');
+    },
+
+    /**
+     * 認識結果の合計をリアルタイムチェック
+     */
+    updateOcrTotalCheck() {
+        const riichiSticks = parseInt(document.getElementById('riichi-sticks').value) || 0;
+        const expectedTotal = 120000 - riichiSticks * 1000;
+
+        let total = 0;
+        for (let i = 0; i < 4; i++) {
+            const val = parseInt(document.getElementById(`ocr-score-${i}`).value) || 0;
+            total += val;
+        }
+
+        const checkDiv = document.getElementById('ocr-total-check');
+        if (total === expectedTotal) {
+            checkDiv.className = 'ocr-total-check ok';
+            checkDiv.textContent = `✅ 合計 ${total.toLocaleString()}点（正常）`;
+        } else {
+            checkDiv.className = 'ocr-total-check ng';
+            checkDiv.textContent = `⚠️ 合計 ${total.toLocaleString()}点（${expectedTotal.toLocaleString()}点になるよう修正してください）`;
+        }
+    },
+
+    /**
+     * 認識結果をスコア入力欄に反映
+     */
+    applyOcrScores() {
+        for (let i = 0; i < 4; i++) {
+            const val = document.getElementById(`ocr-score-${i}`).value;
+            document.getElementById(`current-player${i}`).value = val;
+        }
+        this.closeOcrResultModal();
     }
 };
 
