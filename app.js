@@ -89,6 +89,9 @@ const App = {
         document.getElementById(`${screenName}-screen`).classList.remove('hidden');
 
         this.currentScreen = screenName;
+
+        // 画面遷移時にページ先頭へスクロール
+        window.scrollTo(0, 0);
     },
 
     /**
