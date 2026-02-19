@@ -5,6 +5,7 @@
 const App = {
     currentScreen: 'rule-selection',
     selectedRule: null,
+    detailCounter: 0,
     gameState: {
         rule: null,
         players: ['東家', '南家', '西家', '北家'],
@@ -109,6 +110,7 @@ const App = {
      */
     calculateResults() {
         console.log('=== 計算開始 ===');
+        this.detailCounter = 0;
 
         try {
             // 入力値を取得
@@ -268,16 +270,16 @@ const App = {
       `;
 
             // 1位になる条件
-            html += this.formatCondition('1位になる条件', playerResult.conditions.toFirst);
+            html += this.formatCondition('1位になる条件', playerResult.conditions.toFirst, playerResult.currentTotals);
 
             // 3位→2位の条件
             if (playerResult.currentRank === 3) {
-                html += this.formatCondition('2位になる条件', playerResult.conditions.fromThirdToSecond);
+                html += this.formatCondition('2位になる条件', playerResult.conditions.fromThirdToSecond, playerResult.currentTotals);
             }
 
             // 4位→2位の条件
             if (playerResult.currentRank === 4) {
-                html += this.formatCondition('2位になる条件', playerResult.conditions.fromFourthToSecond);
+                html += this.formatCondition('2位になる条件', playerResult.conditions.fromFourthToSecond, playerResult.currentTotals);
             }
 
             // 放銃限度（1位・2位のプレイヤーのみ表示）
@@ -296,7 +298,7 @@ const App = {
     /**
      * 条件をフォーマット
      */
-    formatCondition(title, condition) {
+    formatCondition(title, condition, currentTotals) {
         if (!condition || !condition.possible) {
             return `
         <div class="condition-item">
@@ -314,15 +316,21 @@ const App = {
         // ツモ条件
         const tsumo = condition.tsumo;
         if (tsumo && tsumo.possible) {
-            html += `<p><strong>ツモ:</strong> ${tsumo.description}`;
+            const detailId = `detail-${this.detailCounter++}`;
+            let tsumoText = `<strong>ツモ:</strong> ${tsumo.description}`;
             if (tsumo.payment) {
                 if (tsumo.payment.allPayment) {
-                    html += ` (${tsumo.payment.allPayment.toLocaleString()}点オール)`;
+                    tsumoText += ` (${tsumo.payment.allPayment.toLocaleString()}点オール)`;
                 } else {
-                    html += ` (子${tsumo.payment.koPayment.toLocaleString()}点/親${tsumo.payment.oyaPayment.toLocaleString()}点)`;
+                    tsumoText += ` (子${tsumo.payment.koPayment.toLocaleString()}点/親${tsumo.payment.oyaPayment.toLocaleString()}点)`;
                 }
             }
-            html += `</p>`;
+            html += `<div class="detail-toggle" onclick="App.toggleDetail('${detailId}')">
+              <p>${tsumoText} <span class="detail-arrow" id="arrow-${detailId}">▶</span></p>
+            </div>`;
+            html += `<div class="detail-panel" id="${detailId}">`;
+            html += this.formatSimulationDetail(tsumo.simulationDetail, currentTotals);
+            html += `</div>`;
         } else if (tsumo) {
             html += `<p><strong>ツモ:</strong> ${tsumo.reason || '達成不可'}</p>`;
         }
@@ -333,9 +341,16 @@ const App = {
             condition.ron.forEach(ronCond => {
                 const fromPlayer = this.gameState.players[ronCond.fromPlayerIndex];
                 if (ronCond.possible) {
-                    html += `<p style="margin-left: var(--spacing-md); font-size: var(--font-size-sm);">
-            ${fromPlayer}から: ${ronCond.description} (${ronCond.score.toLocaleString()}点)
-          </p>`;
+                    const detailId = `detail-${this.detailCounter++}`;
+                    html += `<div class="detail-toggle" onclick="App.toggleDetail('${detailId}')" style="margin-left: var(--spacing-md);">
+                      <p style="font-size: var(--font-size-sm);">
+                        ${fromPlayer}から: ${ronCond.description} (${ronCond.score.toLocaleString()}点)
+                        <span class="detail-arrow" id="arrow-${detailId}">▶</span>
+                      </p>
+                    </div>`;
+                    html += `<div class="detail-panel" id="${detailId}" style="margin-left: var(--spacing-md);">`;
+                    html += this.formatSimulationDetail(ronCond.simulationDetail, currentTotals);
+                    html += `</div>`;
                 } else {
                     html += `<p style="margin-left: var(--spacing-md); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
             ${fromPlayer}から: ${ronCond.reason || '達成不可'}
@@ -345,6 +360,79 @@ const App = {
         }
 
         html += `</div>`;
+        return html;
+    },
+
+    /**
+     * 詳細パネルの開閉
+     */
+    toggleDetail(detailId) {
+        const panel = document.getElementById(detailId);
+        const arrow = document.getElementById(`arrow-${detailId}`);
+        if (panel) {
+            const isOpen = panel.classList.toggle('open');
+            if (arrow) {
+                arrow.textContent = isOpen ? '▼' : '▶';
+            }
+        }
+    },
+
+    /**
+     * シミュレーション詳細をフォーマット
+     */
+    formatSimulationDetail(outcome, currentTotals) {
+        if (!outcome || !currentTotals) return '';
+
+        const players = this.gameState.players;
+
+        // 和了後の順位を計算
+        const afterSorted = [...outcome].sort((a, b) => b.total - a.total);
+        const afterRanks = {};
+        afterSorted.forEach((o, idx) => { afterRanks[o.playerIndex] = idx + 1; });
+
+        // 和了前の順位を計算
+        const beforeSorted = [...currentTotals].sort((a, b) => b.total - a.total);
+        const beforeRanks = {};
+        beforeSorted.forEach((o, idx) => { beforeRanks[o.playerIndex] = idx + 1; });
+
+        let html = `<table class="detail-table">`;
+        html += `<thead><tr>
+          <th></th>
+          <th>順位</th>
+          <th>順位点</th>
+          <th>合計</th>
+        </tr></thead><tbody>`;
+
+        for (let i = 0; i < 4; i++) {
+            const before = currentTotals[i];
+            const after = outcome[i];
+            const rankBefore = beforeRanks[i];
+            const rankAfter = afterRanks[i];
+            const rankChanged = rankBefore !== rankAfter;
+            const totalDiff = after.total - before.total;
+            const rankPointDiff = after.rankPoint - before.rankPoint;
+
+            const rankArrow = rankChanged
+                ? (rankAfter < rankBefore ? `<span style="color:var(--color-success);"> ↑${rankBefore}→${rankAfter}</span>`
+                    : `<span style="color:var(--color-danger);"> ↓${rankBefore}→${rankAfter}</span>`)
+                : `${rankAfter}位`;
+
+            const formatDiff = (val) => {
+                const v = val / 1000;
+                if (v > 0) return `<span style="color:var(--color-success);">+${v.toFixed(1)}</span>`;
+                if (v < 0) return `<span style="color:var(--color-danger);">${v.toFixed(1)}</span>`;
+                return '±0';
+            };
+
+            html += `<tr${rankChanged ? ' class="rank-changed"' : ''}>
+              <td class="player-name-cell">${players[i]}</td>
+              <td>${rankArrow}</td>
+              <td>${formatDiff(rankPointDiff)}</td>
+              <td>${((after.total - 30000) / 1000).toFixed(1)} (${formatDiff(totalDiff)})</td>
+            </tr>`;
+        }
+
+        html += `</tbody></table>`;
         return html;
     },
 
