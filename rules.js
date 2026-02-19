@@ -56,11 +56,11 @@ const MahjongRules = {
             let i = 0;
 
             while (i < sorted.length) {
-                const currentScore = sorted[i].score;
+                const currentOlasuScore = sorted[i].olasuScore;
                 const sameScorePlayers = [];
 
-                // 同点のプレイヤーを集める
-                while (i < sorted.length && sorted[i].score === currentScore) {
+                // 同点のプレイヤーを集める（オーラスの点数で判定）
+                while (i < sorted.length && sorted[i].olasuScore === currentOlasuScore) {
                     sameScorePlayers.push(sorted[i]);
                     i++;
                 }
