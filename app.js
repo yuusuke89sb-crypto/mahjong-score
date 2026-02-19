@@ -329,7 +329,8 @@ const App = {
               <p>${tsumoText} <span class="detail-arrow" id="arrow-${detailId}">▶</span></p>
             </div>`;
             html += `<div class="detail-panel" id="${detailId}">`;
-            html += this.formatSimulationDetail(tsumo.simulationDetail, currentTotals);
+            const tsumoDetail = this.formatSimulationDetail(tsumo.simulationDetail, currentTotals);
+            html += tsumoDetail || '<p style="color:var(--color-warning); padding: var(--spacing-sm);">詳細データなし</p>';
             html += `</div>`;
         } else if (tsumo) {
             html += `<p><strong>ツモ:</strong> ${tsumo.reason || '達成不可'}</p>`;
@@ -349,7 +350,8 @@ const App = {
                       </p>
                     </div>`;
                     html += `<div class="detail-panel" id="${detailId}" style="margin-left: var(--spacing-md);">`;
-                    html += this.formatSimulationDetail(ronCond.simulationDetail, currentTotals);
+                    const ronDetail = this.formatSimulationDetail(ronCond.simulationDetail, currentTotals);
+                    html += ronDetail || '<p style="color:var(--color-warning); padding: var(--spacing-sm);">詳細データなし</p>';
                     html += `</div>`;
                 } else {
                     html += `<p style="margin-left: var(--spacing-md); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
@@ -369,6 +371,7 @@ const App = {
     toggleDetail(detailId) {
         const panel = document.getElementById(detailId);
         const arrow = document.getElementById(`arrow-${detailId}`);
+        console.log('toggleDetail:', detailId, 'panel:', panel, 'innerHTML length:', panel ? panel.innerHTML.length : 0);
         if (panel) {
             const isOpen = panel.classList.toggle('open');
             if (arrow) {
@@ -381,7 +384,11 @@ const App = {
      * シミュレーション詳細をフォーマット
      */
     formatSimulationDetail(outcome, currentTotals) {
-        if (!outcome || !currentTotals) return '';
+        console.log('formatSimulationDetail called:', 'outcome:', outcome, 'currentTotals:', currentTotals);
+        if (!outcome || !currentTotals) {
+            console.log('formatSimulationDetail: データなし', 'outcome:', !!outcome, 'currentTotals:', !!currentTotals);
+            return '';
+        }
 
         const players = this.gameState.players;
 

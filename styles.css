@@ -302,6 +302,77 @@ body {
   font-size: var(--font-size-sm);
 }
 
+/* タップで開閉する詳細パネル */
+.detail-toggle {
+  cursor: pointer;
+  padding: var(--spacing-xs) 0;
+  transition: background var(--transition-fast);
+  border-radius: var(--radius-sm);
+}
+
+.detail-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.detail-toggle:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.detail-arrow {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-left: var(--spacing-xs);
+  display: inline-block;
+  transition: transform var(--transition-fast);
+}
+
+.detail-panel {
+  display: none;
+  padding: var(--spacing-sm) 0;
+}
+
+.detail-panel.open {
+  display: block;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs);
+  margin-top: var(--spacing-xs);
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.detail-table th,
+.detail-table td {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  text-align: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detail-table th {
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 0.65rem;
+}
+
+.detail-table td.player-name-cell {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.detail-table tr.rank-changed {
+  background: rgba(79, 70, 229, 0.1);
+}
+
+.detail-table tr:last-child td {
+  border-bottom: none;
+}
+
 /* バッジ */
 .badge {
   display: inline-block;
