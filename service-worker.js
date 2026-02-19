@@ -1,13 +1,15 @@
-const CACHE_NAME = 'mahjong-calc-v1';
+const CACHE_NAME = 'mahjong-calc-v2';
 const urlsToCache = [
-    '/',
-    '/index.html',
-    '/styles.css',
-    '/app.js',
-    '/scoreTable.js',
-    '/rules.js',
-    '/calculator.js',
-    '/manifest.json'
+    './',
+    './index.html',
+    './styles.css',
+    './app.js',
+    './scoreTable.js',
+    './rules.js',
+    './calculator.js',
+    './manifest.json',
+    './icon-192.png',
+    './icon-512.png'
 ];
 
 // インストール時にキャッシュ
