@@ -209,8 +209,10 @@ const Calculator = {
      * @returns {Array} 各放銃先ごとの最大放銃点数
      */
     calcMaxRonAllowed(gameState, playerIndex) {
-        const { currentScores, round3TotalScores } = gameState;
+        const { currentScores, round3TotalScores, riichiSticks, honbaSticks } = gameState;
         const ruleConfig = MahjongRules[gameState.rule];
+        const riichiBonus = riichiSticks * 1000;
+        const honbaBonus = honbaSticks * 300;
         const results = [];
 
         for (let winnerIndex = 0; winnerIndex < 4; winnerIndex++) {
@@ -241,9 +243,14 @@ const Calculator = {
                     const mid = Math.floor((lo + hi + 100) / 200) * 100; // 100点刻み
                     if (mid > hi) break;
 
+                    // 放銃者の支払い = ロン点 + 積み棒×300
+                    const loserPayment = mid + honbaBonus;
+                    // 上がり者の取得 = ロン点 + 積み棒×300 + 立直棒×1000
+                    const winnerGain = mid + honbaBonus + riichiBonus;
+
                     const outcome = this.simulateOutcome(
-                        currentScores, round3TotalScores, winnerIndex, mid,
-                        { [playerIndex]: mid }, ruleConfig
+                        currentScores, round3TotalScores, winnerIndex, winnerGain,
+                        { [playerIndex]: loserPayment }, ruleConfig
                     );
                     const rank = this.getRankFromOutcome(outcome, playerIndex);
 
