@@ -57,9 +57,14 @@ const App = {
             this.showScreen('rule-selection');
         });
 
-        // 数値入力フィールドをタップしたとき自動で全選択（0を消す手間をなくす）
+        // 数値入力フィールドをタップしたとき自動で全選択＆スクロール
         document.querySelectorAll('input[type="number"]').forEach(input => {
-            input.addEventListener('focus', () => input.select());
+            input.addEventListener('focus', () => {
+                input.select();
+                setTimeout(() => {
+                    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 300);
+            });
         });
     },
 
