@@ -56,6 +56,11 @@ const App = {
         document.getElementById('back-to-rule-btn').addEventListener('click', () => {
             this.showScreen('rule-selection');
         });
+
+        // 数値入力フィールドをタップしたとき自動で全選択（0を消す手間をなくす）
+        document.querySelectorAll('input[type="number"]').forEach(input => {
+            input.addEventListener('focus', () => input.select());
+        });
     },
 
     /**
