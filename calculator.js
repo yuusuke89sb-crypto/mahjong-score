@@ -25,6 +25,7 @@ const Calculator = {
                 projectedTotalScore: currentTotals[i].total,
                 currentRank,
                 isDealer,
+                currentTotals,
                 conditions: {
                     toFirst: this.calcConditionForTargetRank(gameState, i, 1, currentTotals, ruleConfig),
                     fromThirdToSecond: currentRank === 3
@@ -160,7 +161,8 @@ const Calculator = {
                     han: hand.han,
                     description: ScoreTable.formatScore(hand.fu, hand.han),
                     payment: tsumoScore,
-                    winnerGain
+                    winnerGain,
+                    simulationDetail: outcome
                 };
             }
         }
@@ -189,7 +191,8 @@ const Calculator = {
                     han: hand.han,
                     description: ScoreTable.formatScore(hand.fu, hand.han),
                     score: ronScore,
-                    winnerGain
+                    winnerGain,
+                    simulationDetail: outcome
                 };
             }
         }
