@@ -31,6 +31,7 @@
   <div class="container">
     <!-- ヘッダー -->
     <header class="app-header">
+      <button id="theme-toggle" class="theme-toggle" title="テーマ切替">🌙</button>
       <h1>🀄 麻雀点数計算</h1>
       <p>大会用条件計算ツール</p>
     </header>
@@ -45,10 +46,8 @@
             <h3>日本プロ麻雀連盟</h3>
             <p>公式ルール</p>
             <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              30000点持ち<br>
               12点加減方式<br>
-              1人浮き: +12.0 -1.0 -3.0 -8.0<br>
-              2人浮き: +8.0 +4.0 -4.0 -8.0<br>
-              3人浮き: +8.0 +3.0 +1.0 -12.0<br>
               同着折半
             </p>
           </div>
@@ -57,10 +56,8 @@
             <h3>WRCルール</h3>
             <p>World Riichi Championship</p>
             <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
-              1着: +15<br>
-              2着: +5<br>
-              3着: -5<br>
-              4着: -15<br>
+              30000点持ち<br>
+              +15 / +5 / -5 / -15<br>
               同点分割
             </p>
           </div>
@@ -69,10 +66,28 @@
             <h3>WRC-Rルール</h3>
             <p>World Riichi Championship - Red</p>
             <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
-              1着: +30<br>
-              2着: +15<br>
-              3着: -15<br>
-              4着: -30<br>
+              30000点持ち<br>
+              +30 / +15 / -15 / -30<br>
+              同点分割
+            </p>
+          </div>
+
+          <div class="rule-card" data-rule="mleague">
+            <h3>Mリーグルール</h3>
+            <p>25000点持ち30000点返し</p>
+            <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              ウマ: +30 / +10 / -10 / -30<br>
+              オカ: +20（1位のみ）<br>
+              切り上げ満貫
+            </p>
+          </div>
+
+          <div class="rule-card" data-rule="saikouisen">
+            <h3>最高位戦ルール</h3>
+            <p>最高位戦日本プロ麻雀協会</p>
+            <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              30000点持ち<br>
+              +30 / +10 / -10 / -30<br>
               同点分割
             </p>
           </div>
@@ -113,12 +128,15 @@
 
         <!-- オーラス現在スコア -->
         <div class="form-group">
-          <label class="form-label">オーラス現在スコア</label>
+          <label class="form-label">
+            オーラス現在スコア
+            <button id="reset-scores-btn" class="btn-reset" type="button">均等配分</button>
+          </label>
           <div class="grid grid-4">
-            <input type="number" id="current-player0" class="form-input" placeholder="東家" required>
-            <input type="number" id="current-player1" class="form-input" placeholder="南家" required>
-            <input type="number" id="current-player2" class="form-input" placeholder="西家" required>
-            <input type="number" id="current-player3" class="form-input" placeholder="北家" required>
+            <input type="number" id="current-player0" class="form-input" placeholder="東家" value="30000" required>
+            <input type="number" id="current-player1" class="form-input" placeholder="南家" value="30000" required>
+            <input type="number" id="current-player2" class="form-input" placeholder="西家" value="30000" required>
+            <input type="number" id="current-player3" class="form-input" placeholder="北家" value="30000" required>
           </div>
         </div>
 
@@ -150,11 +168,19 @@
           <div class="grid grid-2">
             <div>
               <label class="form-label">立直棒</label>
-              <input type="number" id="riichi-sticks" class="form-input" value="0" min="0">
+              <div class="stepper-group">
+                <button type="button" class="stepper-btn" data-target="riichi-sticks" data-delta="-1">−</button>
+                <input type="number" id="riichi-sticks" class="form-input" value="0" min="0">
+                <button type="button" class="stepper-btn" data-target="riichi-sticks" data-delta="1">＋</button>
+              </div>
             </div>
             <div>
               <label class="form-label">積み棒</label>
-              <input type="number" id="honba-sticks" class="form-input" value="0" min="0">
+              <div class="stepper-group">
+                <button type="button" class="stepper-btn" data-target="honba-sticks" data-delta="-1">−</button>
+                <input type="number" id="honba-sticks" class="form-input" value="0" min="0">
+                <button type="button" class="stepper-btn" data-target="honba-sticks" data-delta="1">＋</button>
+              </div>
             </div>
           </div>
         </div>

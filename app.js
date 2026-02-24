@@ -20,6 +20,7 @@ const App = {
      * アプリケーション初期化
      */
     init() {
+        this.loadTheme();
         this.setupEventListeners();
         this.loadFromLocalStorage();
         this.showScreen('rule-selection');
@@ -59,6 +60,33 @@ const App = {
             this.showScreen('rule-selection');
         });
 
+        // テーマ切替
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            this.toggleTheme();
+        });
+
+        // ステッパーボタン
+        document.querySelectorAll('.stepper-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.dataset.target;
+                const delta = parseInt(btn.dataset.delta);
+                const input = document.getElementById(targetId);
+                if (input) {
+                    const newVal = Math.max(0, (parseInt(input.value) || 0) + delta);
+                    input.value = newVal;
+                }
+            });
+        });
+
+        // 均等配分ボタン
+        document.getElementById('reset-scores-btn').addEventListener('click', () => {
+            const ruleConfig = this.selectedRule ? MahjongRules[this.selectedRule] : null;
+            const startingPoints = ruleConfig ? ruleConfig.startingPoints : 30000;
+            for (let i = 0; i < 4; i++) {
+                document.getElementById(`current-player${i}`).value = startingPoints;
+            }
+        });
+
         // 数値入力フィールドをタップしたとき自動で全選択＆スクロール
         document.querySelectorAll('input[type="number"]').forEach(input => {
             input.addEventListener('focus', () => {
@@ -89,7 +117,22 @@ const App = {
         });
 
         // 選択されたカードに選択状態を追加
-        document.querySelector(`[data-rule="${rule}"]`).classList.add('selected');
+        const selectedCard = document.querySelector(`[data-rule="${rule}"]`);
+        if (selectedCard) selectedCard.classList.add('selected');
+
+        // ルールに応じてオーラススコアのデフォルト値を更新
+        const ruleConfig = MahjongRules[rule];
+        if (ruleConfig) {
+            const startingPoints = ruleConfig.startingPoints;
+            for (let i = 0; i < 4; i++) {
+                const input = document.getElementById(`current-player${i}`);
+                // まだ初期値のまま（30000か25000）なら更新
+                const currentVal = parseInt(input.value) || 0;
+                if (currentVal === 30000 || currentVal === 25000 || currentVal === 0) {
+                    input.value = startingPoints;
+                }
+            }
+        }
 
         // 確定ボタンを有効化
         document.getElementById('confirm-rule-btn').disabled = false;
@@ -215,11 +258,14 @@ const App = {
      * 入力バリデーション
      */
     validateInput() {
-        // オーラススコアの合計チェック
-        // 4者の点数合計 + 立直棒×1000 = 120000 であること
+        // ルールに応じた合計点を計算
+        const ruleConfig = MahjongRules[this.gameState.rule];
+        const startingPoints = ruleConfig ? ruleConfig.startingPoints : 30000;
+        const totalPoints = startingPoints * 4; // Mリーグ: 100000, その他: 120000
+
         const total = this.gameState.currentScores.reduce((sum, score) => sum + score, 0);
         const riichiTotal = this.gameState.riichiSticks * 1000;
-        const expectedPlayerTotal = 120000 - riichiTotal;
+        const expectedPlayerTotal = totalPoints - riichiTotal;
 
         if (total !== expectedPlayerTotal) {
             const riichiMsg = riichiTotal > 0 ? `\n（立直棒${this.gameState.riichiSticks}本 = ${riichiTotal}点分が場に出ているため、4者の合計は${expectedPlayerTotal}点になります）` : '';
@@ -237,14 +283,18 @@ const App = {
         const container = document.getElementById('results-container');
         container.innerHTML = '';
 
+        // ルール設定から返し点を取得
+        const ruleConfig = MahjongRules[this.gameState.rule];
+        const returnPoints = ruleConfig ? ruleConfig.returnPoints : 30000;
+
         // 合計スコア一覧を先頭に表示
         const summaryDiv = document.createElement('div');
         summaryDiv.className = 'score-summary';
-        summaryDiv.style.cssText = 'margin-bottom: var(--spacing-xl); padding: var(--spacing-lg); background: var(--color-surface); border-radius: var(--border-radius); border: 1px solid var(--color-border);';
+        summaryDiv.style.cssText = 'margin-bottom: var(--spacing-xl); padding: var(--spacing-lg); background: var(--color-surface); border-radius: var(--radius-lg); border: 1px solid var(--color-border);';
 
         let summaryHtml = '<h3 style="margin-bottom: var(--spacing-md);">📊 現在の合計スコア</h3>';
         summaryHtml += '<p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">※流局の場合、この順位で確定します</p>';
-        summaryHtml += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md);">';
+        summaryHtml += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--spacing-sm);">';
 
         // 順位順にソート
         const sortedResults = [...results].sort((a, b) => b.projectedTotalScore - a.projectedTotalScore);
@@ -252,17 +302,19 @@ const App = {
         sortedResults.forEach((result, index) => {
             const rank = index + 1;
             const rankBadge = this.getRankBadgeClass(rank);
+            const totalDiff = (result.projectedTotalScore - returnPoints) / 1000;
+            const scoreDiff = (result.currentScore - returnPoints) / 1000;
             summaryHtml += `
-                <div style="padding: var(--spacing-md); background: var(--color-background); border-radius: var(--border-radius); text-align: center;">
-                    <div style="font-weight: 600; margin-bottom: var(--spacing-xs);">
+                <div style="padding: var(--spacing-sm); background: var(--color-background); border-radius: var(--radius-md); text-align: center;">
+                    <div style="font-weight: 600; margin-bottom: var(--spacing-xs); font-size: var(--font-size-sm);">
                         ${result.playerName} <span class="badge ${rankBadge}">${rank}位</span>
                     </div>
                     <div style="font-size: var(--font-size-lg); font-weight: 700; color: var(--color-primary); margin: var(--spacing-xs) 0;">
-                        ${((result.projectedTotalScore - 30000) / 1000) > 0 ? '+' : ''}${((result.projectedTotalScore - 30000) / 1000).toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                        ${totalDiff > 0 ? '+' : ''}${totalDiff.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     </div>
                     <div style="font-size: var(--font-size-xs); color: var(--color-text-secondary);">
                         3回戦: ${(result.round3TotalScore / 1000).toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<br>
-                        オーラス: ${((result.currentScore - 30000) / 1000) > 0 ? '+' : ''}${((result.currentScore - 30000) / 1000).toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<br>
+                        オーラス: ${scoreDiff > 0 ? '+' : ''}${scoreDiff.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<br>
                         順位点: ${result.rankPoint > 0 ? '+' : ''}${(result.rankPoint / 1000).toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     </div>
                 </div>
@@ -276,30 +328,41 @@ const App = {
         results.forEach((playerResult, index) => {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'player-result fade-in';
+            const accordionId = `player-body-${index}`;
 
+            // ヘッダー（アコーディオン）
             let html = `
-        <h3>${playerResult.playerName} 
-          <span class="badge ${this.getRankBadgeClass(playerResult.currentRank)}">
-            現在${playerResult.currentRank}位
-          </span>
-          ${playerResult.isDealer ? '<span class="badge badge-warning">親</span>' : ''}
-        </h3>
-        <p style="color: var(--color-text-secondary); margin-bottom: var(--spacing-lg);">
-          現在スコア: ${playerResult.currentScore.toLocaleString()}点
-        </p>
+        <div class="player-accordion" onclick="App.toggleAccordion('${accordionId}', this)">
+          <div>
+            <h3 style="margin-bottom: 0;">${playerResult.playerName} 
+              <span class="badge ${this.getRankBadgeClass(playerResult.currentRank)}">
+                現在${playerResult.currentRank}位
+              </span>
+              ${playerResult.isDealer ? '<span class="badge badge-warning">親</span>' : ''}
+            </h3>
+            <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-top: var(--spacing-xs);">
+              現在スコア: ${playerResult.currentScore.toLocaleString()}点
+            </p>
+          </div>
+          <span class="accordion-arrow">▶</span>
+        </div>
+        <div class="player-body" id="${accordionId}">
       `;
 
             // 1位になる条件
-            html += this.formatCondition('1位になる条件', playerResult.conditions.toFirst, playerResult.currentTotals);
+            const toFirstPossible = playerResult.conditions.toFirst && playerResult.conditions.toFirst.possible;
+            html += this.formatCondition('🥇 1位になる条件', playerResult.conditions.toFirst, playerResult.currentTotals, toFirstPossible);
 
             // 3位→2位の条件
             if (playerResult.currentRank === 3) {
-                html += this.formatCondition('2位になる条件', playerResult.conditions.fromThirdToSecond, playerResult.currentTotals);
+                const possible = playerResult.conditions.fromThirdToSecond && playerResult.conditions.fromThirdToSecond.possible;
+                html += this.formatCondition('🥈 2位になる条件', playerResult.conditions.fromThirdToSecond, playerResult.currentTotals, possible);
             }
 
             // 4位→2位の条件
             if (playerResult.currentRank === 4) {
-                html += this.formatCondition('2位になる条件', playerResult.conditions.fromFourthToSecond, playerResult.currentTotals);
+                const possible = playerResult.conditions.fromFourthToSecond && playerResult.conditions.fromFourthToSecond.possible;
+                html += this.formatCondition('🥈 2位になる条件', playerResult.conditions.fromFourthToSecond, playerResult.currentTotals, possible);
             }
 
             // 放銃限度（1位・2位のプレイヤーのみ表示）
@@ -316,6 +379,8 @@ const App = {
                 }
             }
 
+            html += '</div>'; // player-body閉じ
+
             playerDiv.innerHTML = html;
             container.appendChild(playerDiv);
         });
@@ -324,18 +389,19 @@ const App = {
     /**
      * 条件をフォーマット
      */
-    formatCondition(title, condition, currentTotals) {
+    formatCondition(title, condition, currentTotals, isHighlight = false) {
         if (!condition || !condition.possible) {
             return `
-        <div class="condition-item">
+        <div class="condition-item condition-impossible">
           <h4>${title}</h4>
           <p>${(condition && condition.reason) || '達成不可能'}</p>
         </div>
       `;
         }
 
+        const highlightClass = isHighlight ? ' condition-highlight' : '';
         let html = `
-      <div class="condition-item">
+      <div class="condition-item${highlightClass}">
         <h4>${title}</h4>
     `;
 
@@ -690,6 +756,45 @@ const App = {
                     textNodes[textNodes.length - 1].textContent = ` ${name}`;
                 }
             }
+        }
+    },
+
+    /**
+     * テーマ切替
+     */
+    toggleTheme() {
+        const html = document.documentElement;
+        const currentTheme = html.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        html.setAttribute('data-theme', newTheme);
+
+        const toggleBtn = document.getElementById('theme-toggle');
+        toggleBtn.textContent = newTheme === 'light' ? '☀️' : '🌙';
+
+        localStorage.setItem('mahjong-calc-theme', newTheme);
+    },
+
+    /**
+     * テーマ読み込み
+     */
+    loadTheme() {
+        const savedTheme = localStorage.getItem('mahjong-calc-theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        const toggleBtn = document.getElementById('theme-toggle');
+        if (toggleBtn) {
+            toggleBtn.textContent = savedTheme === 'light' ? '☀️' : '🌙';
+        }
+    },
+
+    /**
+     * プレイヤーアコーディオン開閉
+     */
+    toggleAccordion(bodyId, headerEl) {
+        const body = document.getElementById(bodyId);
+        if (body) {
+            body.classList.toggle('open');
+            headerEl.classList.toggle('open');
         }
     },
 

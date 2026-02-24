@@ -13,6 +13,7 @@
   --color-bg-secondary: #1e293b;
   --color-bg-tertiary: #334155;
   --color-bg-card: rgba(30, 41, 59, 0.8);
+  --color-bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
 
   --color-text-primary: #f1f5f9;
   --color-text-secondary: #cbd5e1;
@@ -20,6 +21,9 @@
 
   --color-border: rgba(148, 163, 184, 0.2);
   --color-border-focus: rgba(99, 102, 241, 0.5);
+
+  --color-surface: var(--color-bg-secondary);
+  --color-background: var(--color-bg-primary);
 
   /* スペーシング */
   --spacing-xs: 0.25rem;
@@ -57,6 +61,30 @@
   --transition-slow: 350ms ease-in-out;
 }
 
+/* ライトテーマ */
+[data-theme="light"] {
+  --color-bg-primary: #f8fafc;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #e2e8f0;
+  --color-bg-card: rgba(255, 255, 255, 0.9);
+  --color-bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f8fafc 100%);
+
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+
+  --color-border: rgba(100, 116, 139, 0.2);
+  --color-border-focus: rgba(99, 102, 241, 0.4);
+
+  --color-surface: #ffffff;
+  --color-background: #f1f5f9;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.12);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -68,16 +96,41 @@ body {
   font-size: var(--font-size-base);
   line-height: 1.6;
   color: var(--color-text-primary);
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  background: var(--color-bg-gradient);
   background-attachment: fixed;
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background var(--transition-base), color var(--transition-base);
 }
 
 .container {
   max-width: 1200px;
   margin: 0 auto;
   padding: var(--spacing-lg);
+}
+
+/* テーマトグル */
+.theme-toggle {
+  position: absolute;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: var(--shadow-md);
 }
 
 /* ヘッダー */
@@ -89,6 +142,7 @@ body {
   border-radius: var(--radius-xl);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-lg);
+  position: relative;
 }
 
 .app-header h1 {
@@ -311,11 +365,11 @@ body {
 }
 
 .detail-toggle:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(128, 128, 128, 0.1);
 }
 
 .detail-toggle:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(128, 128, 128, 0.15);
 }
 
 .detail-arrow {
@@ -353,7 +407,7 @@ body {
 }
 
 .detail-table th {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(128, 128, 128, 0.15);
   color: var(--color-text-muted);
   font-weight: 600;
   font-size: 0.65rem;
@@ -382,6 +436,104 @@ body {
   border-radius: var(--radius-sm);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* ステッパーボタン */
+.stepper-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.stepper-group .form-input {
+  text-align: center;
+  flex: 1;
+}
+
+.stepper-btn {
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.stepper-btn:hover {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.stepper-btn:active {
+  transform: scale(0.95);
+}
+
+/* プレイヤー結果アコーディオン */
+.player-accordion {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
+}
+
+.player-accordion .accordion-arrow {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.player-accordion.open .accordion-arrow {
+  transform: rotate(90deg);
+}
+
+.player-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.player-body.open {
+  max-height: 5000px;
+  transition: max-height 0.5s ease-in;
+}
+
+/* 条件ハイライト */
+.condition-highlight {
+  border-left: 3px solid var(--color-success);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.condition-impossible {
+  opacity: 0.5;
+}
+
+/* 均等配分ボタン */
+.btn-reset {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-reset:hover {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
 }
 
 .badge-success {

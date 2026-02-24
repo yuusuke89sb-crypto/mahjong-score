@@ -202,5 +202,128 @@ const MahjongRules = {
 
             return results;
         }
+    },
+
+    /**
+     * Mリーグルール
+     * 25000点持ち30000点返し、ウマ+30/+10/-10/-30、オカ+20（1位のみ）
+     */
+    mleague: {
+        name: 'Mリーグルール',
+        description: '25000点持ち30000点返し ウマ: +30/+10/-10/-30 オカ+20',
+        startingPoints: 25000,
+        returnPoints: 30000,
+        scoreTableRule: 'wrc', // 切り上げ満貫
+
+        calculateRankPoints(finalScores) {
+            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+
+            const umaTable = {
+                1: 30,
+                2: 10,
+                3: -10,
+                4: -30
+            };
+
+            const results = [];
+            let currentRank = 1;
+            let i = 0;
+
+            while (i < sorted.length) {
+                const currentScore = sorted[i].score;
+                const sameScorePlayers = [];
+
+                while (i < sorted.length && sorted[i].score === currentScore) {
+                    sameScorePlayers.push(sorted[i]);
+                    i++;
+                }
+
+                // ウマを折半
+                let totalUma = 0;
+                for (let j = 0; j < sameScorePlayers.length; j++) {
+                    totalUma += umaTable[currentRank + j];
+                }
+                const averageUma = totalUma / sameScorePlayers.length;
+
+                // オカ（1位のみ+20、同着なら分割）
+                let oka = 0;
+                for (let j = 0; j < sameScorePlayers.length; j++) {
+                    if (currentRank + j === 1) {
+                        oka = 20 / sameScorePlayers.length;
+                    }
+                }
+
+                for (const player of sameScorePlayers) {
+                    results.push({
+                        playerIndex: player.playerIndex,
+                        score: player.score,
+                        rank: currentRank,
+                        rankPoints: averageUma + oka,
+                        isTied: sameScorePlayers.length > 1
+                    });
+                }
+
+                currentRank += sameScorePlayers.length;
+            }
+
+            return results;
+        }
+    },
+
+    /**
+     * 最高位戦ルール
+     * 30000点持ち30000点返し、ウマ+30/+10/-10/-30
+     */
+    saikouisen: {
+        name: '最高位戦ルール',
+        description: '最高位戦日本プロ麻雀協会 ウマ: +30/+10/-10/-30',
+        startingPoints: 30000,
+        returnPoints: 30000,
+        scoreTableRule: 'wrc', // 切り上げ満貫
+
+        calculateRankPoints(finalScores) {
+            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+
+            const rankPointsTable = {
+                1: 30,
+                2: 10,
+                3: -10,
+                4: -30
+            };
+
+            const results = [];
+            let currentRank = 1;
+            let i = 0;
+
+            while (i < sorted.length) {
+                const currentScore = sorted[i].score;
+                const sameScorePlayers = [];
+
+                while (i < sorted.length && sorted[i].score === currentScore) {
+                    sameScorePlayers.push(sorted[i]);
+                    i++;
+                }
+
+                let totalRankPoints = 0;
+                for (let j = 0; j < sameScorePlayers.length; j++) {
+                    totalRankPoints += rankPointsTable[currentRank + j];
+                }
+                const averageRankPoints = totalRankPoints / sameScorePlayers.length;
+
+                for (const player of sameScorePlayers) {
+                    results.push({
+                        playerIndex: player.playerIndex,
+                        score: player.score,
+                        rank: currentRank,
+                        rankPoints: averageRankPoints,
+                        isTied: sameScorePlayers.length > 1
+                    });
+                }
+
+                currentRank += sameScorePlayers.length;
+            }
+
+            return results;
+        }
     }
 };
