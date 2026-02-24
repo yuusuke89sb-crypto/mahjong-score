@@ -207,6 +207,15 @@
         <h2 class="card-title">計算結果</h2>
         <div id="results-container"></div>
 
+        <div class="share-buttons">
+          <button id="copy-results-btn" class="btn btn-share" onclick="App.copyResultsToClipboard()">
+            📋 結果をコピー
+          </button>
+          <button id="share-line-btn" class="btn btn-share btn-line" onclick="App.shareToLINE()">
+            💬 LINEで共有
+          </button>
+        </div>
+
         <button id="back-to-input-btn" class="btn btn-secondary btn-block mt-lg">
           入力画面に戻る
         </button>

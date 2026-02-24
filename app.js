@@ -292,6 +292,7 @@ const App = {
     displayResults(results, ronLimits, tsumoLimits) {
         const container = document.getElementById('results-container');
         container.innerHTML = '';
+        this.lastResults = results;
 
         // ルール設定から返し点を取得
         const ruleConfig = MahjongRules[this.gameState.rule];
@@ -837,6 +838,93 @@ const App = {
             body.classList.toggle('open');
             headerEl.classList.toggle('open');
         }
+    },
+
+    /**
+     * 共有用テキストを生成
+     */
+    generateShareText() {
+        if (!this.lastResults) return '';
+
+        const ruleConfig = MahjongRules[this.gameState.rule];
+        const returnPoints = ruleConfig ? ruleConfig.returnPoints : 30000;
+        const sorted = [...this.lastResults].sort((a, b) => b.projectedTotalScore - a.projectedTotalScore);
+
+        let text = `🀄 ${ruleConfig ? ruleConfig.name : 'ルール不明'}\n`;
+        text += `━━━━━━━━━━━━━━\n`;
+
+        sorted.forEach((r, i) => {
+            const rank = i + 1;
+            const medal = ['🥇', '🥈', '🥉', ''][rank - 1] || '';
+            const totalDiff = (r.projectedTotalScore - returnPoints) / 1000;
+            const sign = totalDiff > 0 ? '+' : '';
+            text += `${medal} ${rank}位 ${r.playerName}  ${sign}${totalDiff.toFixed(1)}\n`;
+        });
+
+        text += `━━━━━━━━━━━━━━\n`;
+
+        // 各プレイヤーの主要条件を追加
+        this.lastResults.forEach(r => {
+            const cond = r.conditions.toFirst;
+            if (cond && cond.possible && r.currentRank > 1) {
+                const ronMin = cond.ron ? cond.ron.minScore : null;
+                const tsumoMin = cond.tsumo ? cond.tsumo.minScore : null;
+                let condText = `${r.playerName}→1位: `;
+                if (ronMin) condText += `ロン${ronMin.toLocaleString()}点〜`;
+                if (tsumoMin) condText += ` ツモ${tsumoMin.toLocaleString()}点〜`;
+                text += condText + '\n';
+            }
+        });
+
+        return text.trim();
+    },
+
+    /**
+     * 結果をクリップボードにコピー
+     */
+    copyResultsToClipboard() {
+        const text = this.generateShareText();
+        if (!text) return;
+
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.getElementById('copy-results-btn');
+            const original = btn.textContent;
+            btn.textContent = '✅ コピーしました！';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.classList.remove('copied');
+            }, 2000);
+        }).catch(() => {
+            // fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+
+            const btn = document.getElementById('copy-results-btn');
+            const original = btn.textContent;
+            btn.textContent = '✅ コピーしました！';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.classList.remove('copied');
+            }, 2000);
+        });
+    },
+
+    /**
+     * LINEで結果を共有
+     */
+    shareToLINE() {
+        const text = this.generateShareText();
+        if (!text) return;
+
+        const encoded = encodeURIComponent(text);
+        const lineUrl = `https://line.me/R/share?text=${encoded}`;
+        window.open(lineUrl, '_blank');
     },
 
     /**
