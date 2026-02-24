@@ -43,6 +43,7 @@ const App = {
             if (this.selectedRule) {
                 this.gameState.rule = this.selectedRule;
                 this.showScreen('score-input');
+                this.updateScoreIndicator();
             }
         });
 
@@ -74,6 +75,7 @@ const App = {
                 if (input) {
                     const newVal = Math.max(0, (parseInt(input.value) || 0) + delta);
                     input.value = newVal;
+                    this.updateScoreIndicator();
                 }
             });
         });
@@ -85,7 +87,15 @@ const App = {
             for (let i = 0; i < 4; i++) {
                 document.getElementById(`current-player${i}`).value = startingPoints;
             }
+            this.updateScoreIndicator();
         });
+
+        // スコア入力時のリアルタイム合計表示
+        document.querySelectorAll('.score-input').forEach(input => {
+            input.addEventListener('input', () => this.updateScoreIndicator());
+        });
+        // 立直棒変更でも更新
+        document.getElementById('riichi-sticks').addEventListener('input', () => this.updateScoreIndicator());
 
         // 数値入力フィールドをタップしたとき自動で全選択＆スクロール
         document.querySelectorAll('input[type="number"]').forEach(input => {
@@ -756,6 +766,37 @@ const App = {
                     textNodes[textNodes.length - 1].textContent = ` ${name}`;
                 }
             }
+        }
+    },
+
+    /**
+     * スコア合計インジケーターの更新
+     */
+    updateScoreIndicator() {
+        const indicator = document.getElementById('score-total-indicator');
+        if (!indicator) return;
+
+        const ruleConfig = this.selectedRule ? MahjongRules[this.selectedRule] : null;
+        const startingPoints = ruleConfig ? ruleConfig.startingPoints : 30000;
+        const totalPoints = startingPoints * 4;
+
+        let playerTotal = 0;
+        for (let i = 0; i < 4; i++) {
+            playerTotal += parseInt(document.getElementById(`current-player${i}`).value) || 0;
+        }
+        const riichiSticks = parseInt(document.getElementById('riichi-sticks').value) || 0;
+        const actualTotal = playerTotal + riichiSticks * 1000;
+
+        indicator.classList.remove('match', 'mismatch', 'error');
+
+        if (actualTotal === totalPoints) {
+            indicator.className = 'score-total-indicator match';
+            indicator.textContent = `✅ 合計 ${totalPoints.toLocaleString()}点 OK`;
+        } else {
+            const diff = actualTotal - totalPoints;
+            const diffStr = diff > 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString();
+            indicator.className = 'score-total-indicator mismatch';
+            indicator.textContent = `⚠️ 合計 ${actualTotal.toLocaleString()} / ${totalPoints.toLocaleString()}点（${diffStr}）`;
         }
     },
 
