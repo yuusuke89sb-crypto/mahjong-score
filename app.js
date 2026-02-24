@@ -261,6 +261,18 @@ const App = {
      * 入力バリデーション
      */
     validateInput() {
+        // 100点単位チェック
+        const invalidPlayers = [];
+        for (let i = 0; i < 4; i++) {
+            if (this.gameState.currentScores[i] % 100 !== 0) {
+                invalidPlayers.push(this.gameState.players[i]);
+            }
+        }
+        if (invalidPlayers.length > 0) {
+            alert(`点数は100点単位で入力してください。\n対象: ${invalidPlayers.join('、')}`);
+            return false;
+        }
+
         // ルールに応じた合計点を計算
         const ruleConfig = MahjongRules[this.gameState.rule];
         const startingPoints = ruleConfig ? ruleConfig.startingPoints : 30000;
