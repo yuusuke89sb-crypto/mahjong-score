@@ -173,6 +173,35 @@ const ScoreTable = {
   },
 
   /**
+   * 指定点数以下の最大ロン点を持つ手を返す
+   * 放銃限度の符翻表記に使用
+   * @param {number} maxScore - この点数以下のロン点を探す
+   * @param {boolean} isDealer - 上がり者が親かどうか
+   * @param {string} rule - ルール
+   * @returns {Object|null} { fu, han, score, description } or null
+   */
+  findMaxRonHand(maxScore, isDealer, rule = 'official') {
+    if (maxScore <= 0) return null;
+    const hands = this.getAllHands(isDealer, false, rule);
+    // 点数の低い順に並んでいるので、maxScore以下の最後の手を取得
+    let best = null;
+    for (const hand of hands) {
+      if (hand.score <= maxScore) {
+        best = hand;
+      } else {
+        break;
+      }
+    }
+    if (!best) return null;
+    return {
+      fu: best.fu,
+      han: best.han,
+      score: best.score,
+      description: this.formatScore(best.fu, best.han)
+    };
+  },
+
+  /**
    * 点数を表示用の文字列に変換
    */
   formatScore(fu, han) {
