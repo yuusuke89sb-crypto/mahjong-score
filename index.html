@@ -34,7 +34,24 @@
       <button id="theme-toggle" class="theme-toggle" title="テーマ切替">🌙</button>
       <h1>🀄 麻雀点数計算</h1>
       <p>大会用条件計算ツール</p>
+      <button id="history-btn" class="btn-history" onclick="App.showHistory()" title="対局履歴">📜 履歴</button>
     </header>
+
+    <!-- 対局履歴画面 -->
+    <div id="history-screen" class="screen hidden">
+      <div class="card">
+        <h2 class="card-title">📜 対局履歴</h2>
+        <div id="history-container"></div>
+        <div class="history-actions">
+          <button class="btn btn-secondary btn-block" onclick="App.showScreen('rule-selection')">
+            ← 戻る
+          </button>
+          <button id="clear-history-btn" class="btn btn-danger btn-block" onclick="App.clearHistory()">
+            🗑️ 履歴を全削除
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ルール選択画面 -->
     <div id="rule-selection-screen" class="screen">

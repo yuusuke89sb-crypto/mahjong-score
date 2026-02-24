@@ -213,6 +213,9 @@ const App = {
             this.displayResults(results, ronLimits, tsumoLimits);
             console.log('結果表示完了');
 
+            // 履歴に保存
+            this.saveHistory(results);
+
             // 結果画面に遷移
             this.showScreen('results');
             console.log('=== 計算完了 ===');
@@ -799,6 +802,162 @@ const App = {
             indicator.className = 'score-total-indicator mismatch';
             indicator.textContent = `⚠️ 合計 ${actualTotal.toLocaleString()} / ${totalPoints.toLocaleString()}点（${diffStr}）`;
         }
+    },
+
+    /**
+     * 対局履歴を保存
+     */
+    saveHistory(results) {
+        try {
+            const history = JSON.parse(localStorage.getItem('mahjong-calc-history') || '[]');
+
+            const ruleConfig = MahjongRules[this.gameState.rule];
+            const returnPoints = ruleConfig ? ruleConfig.returnPoints : 30000;
+            const sorted = [...results].sort((a, b) => b.projectedTotalScore - a.projectedTotalScore);
+
+            const entry = {
+                id: Date.now(),
+                date: new Date().toISOString(),
+                rule: this.gameState.rule,
+                ruleName: ruleConfig ? ruleConfig.name : '不明',
+                players: sorted.map((r, i) => ({
+                    name: r.playerName,
+                    rank: i + 1,
+                    score: r.currentScore,
+                    totalDiff: ((r.projectedTotalScore - returnPoints) / 1000)
+                })),
+                gameState: { ...this.gameState }
+            };
+
+            history.unshift(entry);
+            // 最大50件保持
+            if (history.length > 50) history.length = 50;
+
+            localStorage.setItem('mahjong-calc-history', JSON.stringify(history));
+        } catch (e) {
+            console.error('履歴保存エラー:', e);
+        }
+    },
+
+    /**
+     * 対局履歴画面を表示
+     */
+    showHistory() {
+        const container = document.getElementById('history-container');
+        const history = JSON.parse(localStorage.getItem('mahjong-calc-history') || '[]');
+
+        if (history.length === 0) {
+            container.innerHTML = '<div class="history-empty">📭 まだ対局履歴がありません</div>';
+        } else {
+            let html = '';
+            history.forEach((entry, i) => {
+                const date = new Date(entry.date);
+                const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+                html += `<div class="history-item" onclick="App.reloadHistory(${i})">`;
+                html += `<button class="history-delete-btn" onclick="event.stopPropagation(); App.deleteHistoryItem(${entry.id})" title="削除">✕</button>`;
+                html += `<div class="history-item-header">`;
+                html += `<span class="history-item-date">${dateStr}</span>`;
+                html += `<span class="history-item-rule">${entry.ruleName}</span>`;
+                html += `</div>`;
+                html += `<div class="history-item-scores">`;
+
+                entry.players.forEach(p => {
+                    const cls = p.totalDiff >= 0 ? 'score-positive' : 'score-negative';
+                    const sign = p.totalDiff >= 0 ? '+' : '';
+                    html += `<div>
+                        <div style="font-size:var(--font-size-xs);color:var(--color-text-secondary);">${p.name}</div>
+                        <div class="${cls}">${sign}${p.totalDiff.toFixed(1)}</div>
+                    </div>`;
+                });
+
+                html += `</div></div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        // 全削除ボタンの表示制御
+        const clearBtn = document.getElementById('clear-history-btn');
+        if (clearBtn) clearBtn.style.display = history.length > 0 ? '' : 'none';
+
+        this.showScreen('history');
+    },
+
+    /**
+     * 履歴から入力データを復元
+     */
+    reloadHistory(index) {
+        try {
+            const history = JSON.parse(localStorage.getItem('mahjong-calc-history') || '[]');
+            const entry = history[index];
+            if (!entry || !entry.gameState) return;
+
+            const gs = entry.gameState;
+
+            // ルール選択
+            if (gs.rule) this.selectRule(gs.rule);
+
+            // プレイヤー名復元
+            const defaultNames = ['東家', '南家', '西家', '北家'];
+            for (let i = 0; i < 4; i++) {
+                const input = document.getElementById(`player-${i}-name`);
+                if (input && gs.players[i]) {
+                    input.value = gs.players[i] !== defaultNames[i] ? gs.players[i] : '';
+                    this.gameState.players[i] = gs.players[i];
+                }
+            }
+            this.updateDealerLabels();
+
+            // スコア復元
+            if (gs.round3TotalScores) {
+                for (let i = 0; i < 4; i++) {
+                    const input = document.getElementById(`round3-total-player${i}`);
+                    if (input) input.value = gs.round3TotalScores[i];
+                }
+            }
+            if (gs.currentScores) {
+                for (let i = 0; i < 4; i++) {
+                    const input = document.getElementById(`current-player${i}`);
+                    if (input) input.value = gs.currentScores[i];
+                }
+            }
+
+            // 親・棒復元
+            if (gs.dealerIndex !== undefined) {
+                const radio = document.querySelector(`input[name="dealer"][value="${gs.dealerIndex}"]`);
+                if (radio) radio.checked = true;
+            }
+            if (gs.riichiSticks !== undefined) document.getElementById('riichi-sticks').value = gs.riichiSticks;
+            if (gs.honbaSticks !== undefined) document.getElementById('honba-sticks').value = gs.honbaSticks;
+
+            this.showScreen('score-input');
+            this.updateScoreIndicator();
+        } catch (e) {
+            console.error('履歴復元エラー:', e);
+        }
+    },
+
+    /**
+     * 履歴を1件削除
+     */
+    deleteHistoryItem(id) {
+        try {
+            let history = JSON.parse(localStorage.getItem('mahjong-calc-history') || '[]');
+            history = history.filter(e => e.id !== id);
+            localStorage.setItem('mahjong-calc-history', JSON.stringify(history));
+            this.showHistory();
+        } catch (e) {
+            console.error('履歴削除エラー:', e);
+        }
+    },
+
+    /**
+     * 全履歴削除
+     */
+    clearHistory() {
+        if (!confirm('すべての対局履歴を削除しますか？')) return;
+        localStorage.removeItem('mahjong-calc-history');
+        this.showHistory();
     },
 
     /**
