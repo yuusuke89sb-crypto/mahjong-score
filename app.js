@@ -963,6 +963,47 @@ const App = {
     },
 
     /**
+     * 履歴をCSVでエクスポート
+     */
+    exportHistoryCSV() {
+        const history = JSON.parse(localStorage.getItem('mahjong-calc-history') || '[]');
+        if (history.length === 0) {
+            alert('エクスポートする履歴がありません。');
+            return;
+        }
+
+        // ヘッダー行
+        const headers = ['日時', 'ルール', '1位名前', '1位スコア', '2位名前', '2位スコア', '3位名前', '3位スコア', '4位名前', '4位スコア'];
+        const rows = [headers.join(',')];
+
+        history.forEach(entry => {
+            const date = new Date(entry.date);
+            const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+            const cols = [dateStr, entry.ruleName];
+            entry.players.forEach(p => {
+                const sign = p.totalDiff >= 0 ? '+' : '';
+                cols.push(p.name);
+                cols.push(`${sign}${p.totalDiff.toFixed(1)}`);
+            });
+
+            rows.push(cols.join(','));
+        });
+
+        const csv = '\uFEFF' + rows.join('\n'); // BOM付きUTF-8
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        const now = new Date();
+        const filename = `麻雀履歴_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}.csv`;
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    },
+
+    /**
      * テーマ切替
      */
     toggleTheme() {
