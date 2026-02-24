@@ -80,16 +80,6 @@ const App = {
             });
         });
 
-        // 均等配分ボタン
-        document.getElementById('reset-scores-btn').addEventListener('click', () => {
-            const ruleConfig = this.selectedRule ? MahjongRules[this.selectedRule] : null;
-            const startingPoints = ruleConfig ? ruleConfig.startingPoints : 30000;
-            for (let i = 0; i < 4; i++) {
-                document.getElementById(`current-player${i}`).value = startingPoints;
-            }
-            this.updateScoreIndicator();
-        });
-
         // スコア入力時のリアルタイム合計表示
         document.querySelectorAll('.score-input').forEach(input => {
             input.addEventListener('input', () => this.updateScoreIndicator());
