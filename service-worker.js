@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-calc-v4';
+const CACHE_NAME = 'mahjong-calc-v5';
 const urlsToCache = [
     './',
     './index.html',
