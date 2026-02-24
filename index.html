@@ -116,6 +116,57 @@
         <button id="confirm-rule-btn" class="btn btn-primary btn-block mt-lg" disabled>
           このルールで開始
         </button>
+
+        <button class="btn btn-secondary btn-block mt-lg" onclick="App.showTournament()"
+          style="margin-top: var(--spacing-sm);">
+          📊 トータル集計
+        </button>
+      </div>
+    </div>
+
+    <!-- トータル集計画面 -->
+    <div id="tournament-screen" class="screen hidden">
+      <div class="card">
+        <h2 class="card-title">📊 トータル集計</h2>
+
+        <!-- ルール選択 -->
+        <div class="form-group">
+          <label class="form-label">ルール</label>
+          <select id="tournament-rule" class="form-input" onchange="App.updateTournamentRule()">
+            <option value="official">日本プロ麻雀連盟 公式ルール</option>
+            <option value="wrc">WRCルール</option>
+            <option value="wrcR">WRC-Rルール</option>
+            <option value="mleague">Mリーグルール</option>
+            <option value="saikouisen">最高位戦ルール</option>
+          </select>
+        </div>
+
+        <!-- プレイヤー名 -->
+        <div class="form-group">
+          <label class="form-label">プレイヤー名</label>
+          <div class="grid grid-4">
+            <input type="text" id="t-player-0" class="form-input" placeholder="プレイヤー1" oninput="App.saveTournament()">
+            <input type="text" id="t-player-1" class="form-input" placeholder="プレイヤー2" oninput="App.saveTournament()">
+            <input type="text" id="t-player-2" class="form-input" placeholder="プレイヤー3" oninput="App.saveTournament()">
+            <input type="text" id="t-player-3" class="form-input" placeholder="プレイヤー4" oninput="App.saveTournament()">
+          </div>
+        </div>
+
+        <!-- トータルスコア -->
+        <div id="tournament-totals" class="tournament-totals"></div>
+
+        <!-- 各半荘 -->
+        <div id="tournament-rounds"></div>
+
+        <!-- アクションボタン -->
+        <div class="history-actions" style="margin-top: var(--spacing-lg);">
+          <button class="btn btn-primary btn-block" onclick="App.addTournamentRound()">
+            ＋ 半荘を追加
+          </button>
+        </div>
+        <button class="btn btn-secondary btn-block mt-lg" onclick="App.showScreen('rule-selection')">
+          ← 戻る
+        </button>
       </div>
     </div>
 
