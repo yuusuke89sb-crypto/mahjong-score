@@ -212,7 +212,7 @@ const Calculator = {
      * @returns {Array} 各放銃先ごとの最大放銃点数
      */
     calcMaxRonAllowed(gameState, playerIndex) {
-        const { currentScores, round3TotalScores, riichiSticks, honbaSticks } = gameState;
+        const { currentScores, round3TotalScores, riichiSticks, honbaSticks, dealerIndex } = gameState;
         const ruleConfig = MahjongRules[gameState.rule];
         const riichiBonus = riichiSticks * 1000;
         const honbaBonus = honbaSticks * 300;
@@ -223,7 +223,8 @@ const Calculator = {
 
             // 放銃額を100点刻みで増やしながら、2位以内を維持できる最大値を探す
             // 最大は役満（32000点）を超えない範囲で探索
-            const MAX_RON = 32000;
+            const winnerIsDealer = winnerIndex === dealerIndex;
+            const MAX_RON = winnerIsDealer ? 48000 : 32000;
             let maxAllowed = 0;
             let canSurviveZero = true;
 
@@ -268,8 +269,97 @@ const Calculator = {
 
             results.push({
                 winnerIndex,
+                winnerIsDealer,
                 maxAllowed,
-                canSurvive: canSurviveZero
+                canSurvive: canSurviveZero,
+                honbaSticks,
+                rule: ruleConfig.scoreTableRule || 'official'
+            });
+        }
+
+        return results;
+    },
+
+    /**
+     * 他家にツモられた場合に2位以内を維持できる最大の手を計算
+     * @param {Object} gameState - ゲーム状態
+     * @param {number} playerIndex - 被ツモのプレイヤー（自分）
+     * @returns {Array} 各ツモ者ごとの限度情報
+     */
+    calcTsumoLimit(gameState, playerIndex) {
+        const { currentScores, round3TotalScores, dealerIndex, riichiSticks, honbaSticks } = gameState;
+        const ruleConfig = MahjongRules[gameState.rule];
+        const riichiBonus = riichiSticks * 1000;
+        const results = [];
+
+        for (let winnerIndex = 0; winnerIndex < 4; winnerIndex++) {
+            if (winnerIndex === playerIndex) continue;
+
+            const isWinnerDealer = winnerIndex === dealerIndex;
+            const candidates = ScoreTable.getAllHands(isWinnerDealer, true, ruleConfig.scoreTableRule);
+
+            let maxSafe = null;
+            let minDanger = null;
+
+            for (const hand of candidates) {
+                const tsumoScore = ScoreTable.getTsumoScore(hand.fu, hand.han, isWinnerDealer, ruleConfig.scoreTableRule);
+
+                let winnerGain = riichiBonus + (honbaSticks * 300);
+                const losers = {};
+
+                if (tsumoScore.allPayment) {
+                    // 親のツモ：全員同額
+                    winnerGain += tsumoScore.allPayment * 3;
+                    for (let i = 0; i < 4; i++) {
+                        if (i !== winnerIndex) {
+                            losers[i] = tsumoScore.allPayment + (honbaSticks * 100);
+                        }
+                    }
+                } else {
+                    // 子のツモ：子と親で支払い異なる
+                    winnerGain += tsumoScore.koPayment * 2 + tsumoScore.oyaPayment;
+                    for (let i = 0; i < 4; i++) {
+                        if (i === winnerIndex) continue;
+                        losers[i] = (i === dealerIndex)
+                            ? tsumoScore.oyaPayment + (honbaSticks * 100)
+                            : tsumoScore.koPayment + (honbaSticks * 100);
+                    }
+                }
+
+                const outcome = this.simulateOutcome(
+                    currentScores, round3TotalScores, winnerIndex, winnerGain, losers, ruleConfig
+                );
+                const rank = this.getRankFromOutcome(outcome, playerIndex);
+
+                if (rank <= 2) {
+                    maxSafe = {
+                        fu: hand.fu,
+                        han: hand.han,
+                        score: hand.score,
+                        description: ScoreTable.formatScore(hand.fu, hand.han),
+                        payment: tsumoScore
+                    };
+                } else {
+                    if (!minDanger) {
+                        minDanger = {
+                            fu: hand.fu,
+                            han: hand.han,
+                            score: hand.score,
+                            description: ScoreTable.formatScore(hand.fu, hand.han),
+                            payment: tsumoScore,
+                            resultRank: rank
+                        };
+                    }
+                    break;
+                }
+            }
+
+            results.push({
+                winnerIndex,
+                winnerIsDealer: isWinnerDealer,
+                maxSafe,
+                minDanger,
+                safe: !minDanger
             });
         }
 

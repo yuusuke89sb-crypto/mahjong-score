@@ -21,6 +21,7 @@ const App = {
      */
     init() {
         this.setupEventListeners();
+        this.loadFromLocalStorage();
         this.showScreen('rule-selection');
     },
 
@@ -67,6 +68,13 @@ const App = {
                 }, 300);
             });
         });
+
+        // プレイヤー名変更時に親ラベルを連動更新
+        for (let i = 0; i < 4; i++) {
+            document.getElementById(`player-${i}-name`).addEventListener('input', () => {
+                this.updateDealerLabels();
+            });
+        }
     },
 
     /**
@@ -137,8 +145,19 @@ const App = {
             }));
             console.log('放銃限度:', ronLimits);
 
+            // ツモられ限度計算（他家にツモられても2位以内を維持できるか）
+            const tsumoLimits = results.map(r => ({
+                playerIndex: r.playerIndex,
+                currentRank: r.currentRank,
+                limits: Calculator.calcTsumoLimit(this.gameState, r.playerIndex)
+            }));
+            console.log('ツモられ限度:', tsumoLimits);
+
+            // 入力データを保存
+            this.saveToLocalStorage();
+
             // 結果を表示
-            this.displayResults(results, ronLimits);
+            this.displayResults(results, ronLimits, tsumoLimits);
             console.log('結果表示完了');
 
             // 結果画面に遷移
@@ -214,7 +233,7 @@ const App = {
     /**
      * 結果を表示
      */
-    displayResults(results, ronLimits) {
+    displayResults(results, ronLimits, tsumoLimits) {
         const container = document.getElementById('results-container');
         container.innerHTML = '';
 
@@ -223,7 +242,8 @@ const App = {
         summaryDiv.className = 'score-summary';
         summaryDiv.style.cssText = 'margin-bottom: var(--spacing-xl); padding: var(--spacing-lg); background: var(--color-surface); border-radius: var(--border-radius); border: 1px solid var(--color-border);';
 
-        let summaryHtml = '<h3 style="margin-bottom: var(--spacing-md);">現在の合計スコア</h3>';
+        let summaryHtml = '<h3 style="margin-bottom: var(--spacing-md);">📊 現在の合計スコア</h3>';
+        summaryHtml += '<p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">※流局の場合、この順位で確定します</p>';
         summaryHtml += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md);">';
 
         // 順位順にソート
@@ -287,6 +307,12 @@ const App = {
                 const ronLimit = ronLimits.find(r => r.playerIndex === playerResult.playerIndex);
                 if (ronLimit) {
                     html += this.formatRonLimit(ronLimit.limits);
+                }
+
+                // ツモられ限度
+                const tsumoLimit = tsumoLimits.find(r => r.playerIndex === playerResult.playerIndex);
+                if (tsumoLimit) {
+                    html += this.formatTsumoLimit(tsumoLimit.limits);
                 }
             }
 
@@ -445,16 +471,23 @@ const App = {
 
     /**
      * 放銃限度をフォーマット（2位以内で勝ち上がれる最大放銃点数）
+     * 符翻表記（70符まで）＋積み棒込みの実際の支払額を括弧表示
      */
     formatRonLimit(limits) {
+        const honbaSticks = this.gameState.honbaSticks || 0;
+        const honbaBonus = honbaSticks * 300;
+        const honbaLabel = honbaSticks > 0 ? `（${honbaSticks}本場）` : '';
+
         let html = `
       <div class="condition-item" style="border-left: 3px solid var(--color-warning, #f59e0b);">
-        <h4>🛡️ 放銃限度（2位以内で勝ち上がれる条件）</h4>
+        <h4>🛡️ 放銃限度${honbaLabel}（2位以内で勝ち上がれる条件）</h4>
         <p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-bottom: var(--spacing-sm);">誰に何点まで放銃しても2位以内を維持できるか</p>
     `;
 
         limits.forEach(limit => {
             const winnerName = this.gameState.players[limit.winnerIndex];
+            const yakumanScore = limit.winnerIsDealer ? 48000 : 32000;
+
             if (!limit.canSurvive) {
                 html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444);">
           ${winnerName}への放銃: 現状すでに3位以下（放銃不可）
@@ -463,19 +496,201 @@ const App = {
                 html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444);">
           ${winnerName}への放銃: 1点でも放銃すると3位以下
         </p>`;
-            } else if (limit.maxAllowed >= 32000) {
+            } else if (limit.maxAllowed >= yakumanScore) {
+                const totalWithHonba = yakumanScore + honbaBonus;
+                const honbaText = honbaSticks > 0 ? `（実際${totalWithHonba.toLocaleString()}点）` : '';
                 html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e);">
-          ${winnerName}への放銃: 役満（32,000点）でも2位以内 ✓
+          ${winnerName}への放銃: 役満（${yakumanScore.toLocaleString()}点）でも2位以内 ✓ ${honbaText}
         </p>`;
             } else {
+                // maxAllowed以下の最大ロン点を符翻で逆引き
+                const hand = ScoreTable.findMaxRonHand(
+                    limit.maxAllowed,
+                    limit.winnerIsDealer,
+                    limit.rule || 'official'
+                );
+
+                if (hand) {
+                    const actualPayment = hand.score + honbaBonus;
+                    const honbaText = honbaSticks > 0
+                        ? `（<strong>${actualPayment.toLocaleString()}点</strong>）`
+                        : '';
+                    html += `<p style="font-size: var(--font-size-sm);">
+          ${winnerName}への放銃: <strong>${hand.description} ${hand.score.toLocaleString()}点</strong>${honbaText}まで2位以内
+        </p>`;
+                } else {
+                    // 符翻表記に該当する手がない場合（非常に小さい点数）
+                    const totalWithHonba = limit.maxAllowed + honbaBonus;
+                    const honbaText = honbaSticks > 0
+                        ? `（実際${totalWithHonba.toLocaleString()}点）`
+                        : '';
+                    html += `<p style="font-size: var(--font-size-sm);">
+          ${winnerName}への放銃: <strong>${limit.maxAllowed.toLocaleString()}点まで</strong>${honbaText}なら2位以内
+        </p>`;
+                }
+            }
+        });
+
+        html += `</div>`;
+        return html;
+    },
+
+    /**
+     * ツモられ限度をフォーマット（他家ツモ時に2位以内を維持できる条件）
+     */
+    formatTsumoLimit(limits) {
+        const honbaSticks = this.gameState.honbaSticks || 0;
+        const honbaLabel = honbaSticks > 0 ? `（${honbaSticks}本場）` : '';
+
+        let html = `
+      <div class="condition-item" style="border-left: 3px solid var(--color-secondary, #06b6d4);">
+        <h4>⚡ ツモられ限度${honbaLabel}（2位以内を維持できる条件）</h4>
+        <p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-bottom: var(--spacing-sm);">他家にツモられても2位以内を維持できるか</p>
+    `;
+
+        limits.forEach(limit => {
+            const winnerName = this.gameState.players[limit.winnerIndex];
+
+            if (limit.safe) {
+                // 役満ツモでも安全
+                html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e);">
+          ${winnerName}のツモ: 役満ツモでも2位以内 ✓
+        </p>`;
+            } else if (!limit.maxSafe) {
+                // どんなツモでもアウト
+                html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444);">
+          ${winnerName}のツモ: ツモられると3位以下
+        </p>`;
+            } else {
+                // 境界がある
+                const safe = limit.maxSafe;
+                let paymentText = '';
+                if (safe.payment.allPayment) {
+                    const base = safe.payment.allPayment;
+                    const withHonba = base + (honbaSticks * 100);
+                    paymentText = honbaSticks > 0
+                        ? ` ${base.toLocaleString()}点All（${withHonba.toLocaleString()}点All）`
+                        : ` ${base.toLocaleString()}点All`;
+                } else {
+                    const ko = safe.payment.koPayment;
+                    const oya = safe.payment.oyaPayment;
+                    const koH = ko + (honbaSticks * 100);
+                    const oyaH = oya + (honbaSticks * 100);
+                    paymentText = honbaSticks > 0
+                        ? ` ${ko.toLocaleString()}/${oya.toLocaleString()}（${koH.toLocaleString()}/${oyaH.toLocaleString()}）`
+                        : ` ${ko.toLocaleString()}/${oya.toLocaleString()}`;
+                }
                 html += `<p style="font-size: var(--font-size-sm);">
-          ${winnerName}への放銃: <strong>${limit.maxAllowed.toLocaleString()}点まで</strong>なら2位以内
+          ${winnerName}のツモ: <strong>${safe.description}${paymentText}</strong>まで2位以内
         </p>`;
             }
         });
 
         html += `</div>`;
         return html;
+    },
+
+    /**
+     * 入力データをlocalStorageに保存
+     */
+    saveToLocalStorage() {
+        try {
+            const data = {
+                rule: this.selectedRule,
+                players: this.gameState.players,
+                round3TotalScores: this.gameState.round3TotalScores.map(s => s / 1000),
+                currentScores: this.gameState.currentScores,
+                dealerIndex: this.gameState.dealerIndex,
+                riichiSticks: this.gameState.riichiSticks,
+                honbaSticks: this.gameState.honbaSticks
+            };
+            localStorage.setItem('mahjong-calc-data', JSON.stringify(data));
+            console.log('localStorageに保存完了');
+        } catch (e) {
+            console.log('localStorage保存エラー:', e);
+        }
+    },
+
+    /**
+     * localStorageから入力データを復元
+     */
+    loadFromLocalStorage() {
+        try {
+            const data = JSON.parse(localStorage.getItem('mahjong-calc-data'));
+            if (!data) return;
+
+            // ルール復元
+            if (data.rule) {
+                this.selectRule(data.rule);
+            }
+
+            // プレイヤー名復元
+            if (data.players) {
+                const defaultNames = ['東家', '南家', '西家', '北家'];
+                for (let i = 0; i < 4; i++) {
+                    const input = document.getElementById(`player-${i}-name`);
+                    if (input && data.players[i] && data.players[i] !== defaultNames[i]) {
+                        input.value = data.players[i];
+                        this.gameState.players[i] = data.players[i];
+                    }
+                }
+                this.updateDealerLabels();
+            }
+
+            // 3回戦累計スコア復元
+            if (data.round3TotalScores) {
+                for (let i = 0; i < 4; i++) {
+                    const input = document.getElementById(`round3-total-player${i}`);
+                    if (input) input.value = data.round3TotalScores[i];
+                }
+            }
+
+            // オーラススコア復元
+            if (data.currentScores) {
+                for (let i = 0; i < 4; i++) {
+                    const input = document.getElementById(`current-player${i}`);
+                    if (input && data.currentScores[i]) input.value = data.currentScores[i];
+                }
+            }
+
+            // 親の位置復元
+            if (data.dealerIndex !== undefined) {
+                const radio = document.querySelector(`input[name="dealer"][value="${data.dealerIndex}"]`);
+                if (radio) radio.checked = true;
+            }
+
+            // 立直棒・積み棒復元
+            if (data.riichiSticks !== undefined) {
+                document.getElementById('riichi-sticks').value = data.riichiSticks;
+            }
+            if (data.honbaSticks !== undefined) {
+                document.getElementById('honba-sticks').value = data.honbaSticks;
+            }
+
+            console.log('localStorageから復元完了:', data);
+        } catch (e) {
+            console.log('localStorage読み込みエラー:', e);
+        }
+    },
+
+    /**
+     * 親ラベルをプレイヤー名に連動更新
+     */
+    updateDealerLabels() {
+        const defaultNames = ['東家', '南家', '西家', '北家'];
+        for (let i = 0; i < 4; i++) {
+            const nameInput = document.getElementById(`player-${i}-name`);
+            const name = (nameInput && nameInput.value.trim()) || defaultNames[i];
+            const radio = document.querySelector(`input[name="dealer"][value="${i}"]`);
+            if (radio && radio.parentElement) {
+                // ラベル内のテキストノードを更新
+                const label = radio.parentElement;
+                const textNodes = Array.from(label.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+                if (textNodes.length > 0) {
+                    textNodes[textNodes.length - 1].textContent = ` ${name}`;
+                }
+            }
+        }
     },
 
     /**
