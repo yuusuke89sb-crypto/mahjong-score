@@ -120,6 +120,17 @@ const App = {
         const selectedCard = document.querySelector(`[data-rule="${rule}"]`);
         if (selectedCard) selectedCard.classList.add('selected');
 
+        // カスタムルール設定パネルの表示切替
+        const customConfig = document.getElementById('custom-rule-config');
+        if (customConfig) {
+            if (rule === 'custom') {
+                customConfig.classList.remove('hidden');
+                this.loadCustomRuleConfig();
+            } else {
+                customConfig.classList.add('hidden');
+            }
+        }
+
         // ルールに応じてオーラススコアのデフォルト値を更新
         const ruleConfig = MahjongRules[rule];
         if (ruleConfig) {
@@ -963,171 +974,77 @@ const App = {
     },
 
     // ==========================================
-    // トータル集計機能
+    // カスタムルール設定
     // ==========================================
 
-    tournamentData: {
-        rule: 'official',
-        players: ['', '', '', ''],
-        rounds: [] // each: [score0, score1, score2, score3]
-    },
-
     /**
-     * トータル集計画面表示
+     * カスタムルール設定の更新
      */
-    showTournament() {
-        this.loadTournament();
+    updateCustomRule() {
+        const starting = parseInt(document.getElementById('custom-starting').value) || 25000;
+        const returnPts = parseInt(document.getElementById('custom-return').value) || 30000;
+        const uma1 = parseFloat(document.getElementById('custom-uma-1').value) || 0;
+        const uma2 = parseFloat(document.getElementById('custom-uma-2').value) || 0;
+        const uma3 = parseFloat(document.getElementById('custom-uma-3').value) || 0;
+        const uma4 = parseFloat(document.getElementById('custom-uma-4').value) || 0;
+        const oka = parseFloat(document.getElementById('custom-oka').value) || 0;
 
-        // ルール復元
-        const select = document.getElementById('tournament-rule');
-        if (select) select.value = this.tournamentData.rule;
+        MahjongRules.custom.startingPoints = starting;
+        MahjongRules.custom.returnPoints = returnPts;
+        MahjongRules.custom.uma = { 1: uma1, 2: uma2, 3: uma3, 4: uma4 };
+        MahjongRules.custom.oka = oka;
 
-        // プレイヤー名復元
-        for (let i = 0; i < 4; i++) {
-            const input = document.getElementById(`t-player-${i}`);
-            if (input) input.value = this.tournamentData.players[i] || '';
-        }
-
-        this.renderTournamentRounds();
-        this.updateTournamentTotals();
-        this.showScreen('tournament');
-    },
-
-    /**
-     * トータル集計ルール変更
-     */
-    updateTournamentRule() {
-        this.tournamentData.rule = document.getElementById('tournament-rule').value;
-        this.saveTournament();
-    },
-
-    /**
-     * 半荘を追加
-     */
-    addTournamentRound() {
-        this.tournamentData.rounds.push([0, 0, 0, 0]);
-        this.renderTournamentRounds();
-        this.updateTournamentTotals();
-        this.saveTournament();
-    },
-
-    /**
-     * 半荘を削除
-     */
-    removeTournamentRound(index) {
-        if (!confirm(`${index + 1}回戦のデータを削除しますか？`)) return;
-        this.tournamentData.rounds.splice(index, 1);
-        this.renderTournamentRounds();
-        this.updateTournamentTotals();
-        this.saveTournament();
-    },
-
-    /**
-     * 半荘入力欄を描画
-     */
-    renderTournamentRounds() {
-        const container = document.getElementById('tournament-rounds');
-        let html = '';
-
-        this.tournamentData.rounds.forEach((round, ri) => {
-            html += `<div class="tournament-round">`;
-            html += `<div class="tournament-round-header">`;
-            html += `<span>${ri + 1}回戦</span>`;
-            html += `<button class="history-delete-btn" onclick="App.removeTournamentRound(${ri})" title="削除">✕</button>`;
-            html += `</div>`;
-            html += `<div class="grid grid-4">`;
-            for (let pi = 0; pi < 4; pi++) {
-                const val = round[pi] || 0;
-                html += `<input type="number" class="form-input" value="${val}" step="0.1"
-                    oninput="App.updateTournamentScore(${ri}, ${pi}, this.value)"
-                    placeholder="0.0">`;
+        // オーラススコアのデフォルト値も更新
+        if (this.selectedRule === 'custom') {
+            for (let i = 0; i < 4; i++) {
+                const input = document.getElementById(`current-player${i}`);
+                const currentVal = parseInt(input.value) || 0;
+                if (currentVal === 30000 || currentVal === 25000 || currentVal === 0) {
+                    input.value = starting;
+                }
             }
-            html += `</div></div>`;
-        });
+        }
 
-        container.innerHTML = html;
+        // localStorageに保存
+        this.saveCustomRuleConfig();
     },
 
     /**
-     * 半荘スコア更新
+     * カスタムルール設定を保存
      */
-    updateTournamentScore(roundIndex, playerIndex, value) {
-        this.tournamentData.rounds[roundIndex][playerIndex] = parseFloat(value) || 0;
-        this.updateTournamentTotals();
-        this.saveTournament();
+    saveCustomRuleConfig() {
+        const config = {
+            startingPoints: MahjongRules.custom.startingPoints,
+            returnPoints: MahjongRules.custom.returnPoints,
+            uma: MahjongRules.custom.uma,
+            oka: MahjongRules.custom.oka
+        };
+        localStorage.setItem('mahjong-custom-rule', JSON.stringify(config));
     },
 
     /**
-     * トータルスコア更新
+     * カスタムルール設定を読み込み
      */
-    updateTournamentTotals() {
-        const totalsDiv = document.getElementById('tournament-totals');
-        const rounds = this.tournamentData.rounds;
-
-        if (rounds.length === 0) {
-            totalsDiv.innerHTML = '<div style="text-align:center;color:var(--color-text-secondary);padding:var(--spacing-md);">半荘を追加してスコアを入力してください</div>';
-            return;
-        }
-
-        // 各プレイヤーの合計計算
-        const totals = [0, 0, 0, 0];
-        for (let pi = 0; pi < 4; pi++) {
-            rounds.forEach(r => {
-                totals[pi] += r[pi] || 0;
-            });
-            totals[pi] = Math.round(totals[pi] * 10) / 10; // 浮動小数点対策
-        }
-
-        // 順位計算
-        const indexed = totals.map((t, i) => ({ index: i, total: t }));
-        indexed.sort((a, b) => b.total - a.total);
-        const ranks = [0, 0, 0, 0];
-        indexed.forEach((item, i) => { ranks[item.index] = i + 1; });
-
-        const medals = ['🥇', '🥈', '🥉', ''];
-
-        let html = '';
-        for (let pi = 0; pi < 4; pi++) {
-            const name = document.getElementById(`t-player-${pi}`).value || `P${pi + 1}`;
-            const total = totals[pi];
-            const sign = total > 0 ? '+' : '';
-            const cls = total > 0 ? 'positive' : total < 0 ? 'negative' : 'zero';
-            const rank = ranks[pi];
-            const medal = medals[rank - 1] || '';
-
-            html += `<div class="t-total-item">
-                <div class="t-total-name">${name}</div>
-                <div class="t-total-score ${cls}">${sign}${total.toFixed(1)}</div>
-                <div class="t-total-rank">${medal} ${rank}位</div>
-            </div>`;
-        }
-
-        totalsDiv.innerHTML = html;
-    },
-
-    /**
-     * トータル集計データ保存
-     */
-    saveTournament() {
-        // プレイヤー名を取得
-        for (let i = 0; i < 4; i++) {
-            const input = document.getElementById(`t-player-${i}`);
-            if (input) this.tournamentData.players[i] = input.value;
-        }
-        localStorage.setItem('mahjong-tournament', JSON.stringify(this.tournamentData));
-    },
-
-    /**
-     * トータル集計データ読み込み
-     */
-    loadTournament() {
+    loadCustomRuleConfig() {
         try {
-            const data = JSON.parse(localStorage.getItem('mahjong-tournament'));
-            if (data) {
-                this.tournamentData = data;
-            }
+            const config = JSON.parse(localStorage.getItem('mahjong-custom-rule'));
+            if (!config) return;
+
+            MahjongRules.custom.startingPoints = config.startingPoints;
+            MahjongRules.custom.returnPoints = config.returnPoints;
+            MahjongRules.custom.uma = config.uma;
+            MahjongRules.custom.oka = config.oka;
+
+            // UIに反映
+            document.getElementById('custom-starting').value = config.startingPoints;
+            document.getElementById('custom-return').value = config.returnPoints;
+            document.getElementById('custom-uma-1').value = config.uma[1];
+            document.getElementById('custom-uma-2').value = config.uma[2];
+            document.getElementById('custom-uma-3').value = config.uma[3];
+            document.getElementById('custom-uma-4').value = config.uma[4];
+            document.getElementById('custom-oka').value = config.oka;
         } catch (e) {
-            console.error('トータル集計読込エラー:', e);
+            console.error('カスタムルール読込エラー:', e);
         }
     },
 

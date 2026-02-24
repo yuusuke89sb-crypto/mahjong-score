@@ -111,61 +111,50 @@
               同点分割
             </p>
           </div>
+          <div class="rule-card" data-rule="custom">
+            <h3>カスタム</h3>
+            <p>自由設定</p>
+            <p style="margin-top: var(--spacing-md); font-size: var(--font-size-xs);">
+              持ち点・返し点<br>
+              ウマ・オカ自由入力
+            </p>
+          </div>
+        </div>
+
+        <!-- カスタムルール設定（custom選択時のみ表示） -->
+        <div id="custom-rule-config" class="custom-rule-config hidden">
+          <h3 style="margin-bottom: var(--spacing-md); font-size: var(--font-size-sm);">⚙️ カスタムルール設定</h3>
+          <div class="grid grid-2" style="gap: var(--spacing-sm); margin-bottom: var(--spacing-md);">
+            <div>
+              <label class="form-label" style="font-size: var(--font-size-xs);">持ち点</label>
+              <input type="number" id="custom-starting" class="form-input" value="25000" step="1000"
+                oninput="App.updateCustomRule()">
+            </div>
+            <div>
+              <label class="form-label" style="font-size: var(--font-size-xs);">返し点</label>
+              <input type="number" id="custom-return" class="form-input" value="30000" step="1000"
+                oninput="App.updateCustomRule()">
+            </div>
+          </div>
+          <label class="form-label" style="font-size: var(--font-size-xs);">ウマ（1位〜4位）</label>
+          <div class="grid grid-4" style="gap: var(--spacing-xs); margin-bottom: var(--spacing-md);">
+            <input type="number" id="custom-uma-1" class="form-input" value="30" placeholder="1位"
+              oninput="App.updateCustomRule()">
+            <input type="number" id="custom-uma-2" class="form-input" value="10" placeholder="2位"
+              oninput="App.updateCustomRule()">
+            <input type="number" id="custom-uma-3" class="form-input" value="-10" placeholder="3位"
+              oninput="App.updateCustomRule()">
+            <input type="number" id="custom-uma-4" class="form-input" value="-30" placeholder="4位"
+              oninput="App.updateCustomRule()">
+          </div>
+          <div>
+            <label class="form-label" style="font-size: var(--font-size-xs);">オカ（1位ボーナス）</label>
+            <input type="number" id="custom-oka" class="form-input" value="0" oninput="App.updateCustomRule()">
+          </div>
         </div>
 
         <button id="confirm-rule-btn" class="btn btn-primary btn-block mt-lg" disabled>
           このルールで開始
-        </button>
-
-        <button class="btn btn-secondary btn-block mt-lg" onclick="App.showTournament()"
-          style="margin-top: var(--spacing-sm);">
-          📊 トータル集計
-        </button>
-      </div>
-    </div>
-
-    <!-- トータル集計画面 -->
-    <div id="tournament-screen" class="screen hidden">
-      <div class="card">
-        <h2 class="card-title">📊 トータル集計</h2>
-
-        <!-- ルール選択 -->
-        <div class="form-group">
-          <label class="form-label">ルール</label>
-          <select id="tournament-rule" class="form-input" onchange="App.updateTournamentRule()">
-            <option value="official">日本プロ麻雀連盟 公式ルール</option>
-            <option value="wrc">WRCルール</option>
-            <option value="wrcR">WRC-Rルール</option>
-            <option value="mleague">Mリーグルール</option>
-            <option value="saikouisen">最高位戦ルール</option>
-          </select>
-        </div>
-
-        <!-- プレイヤー名 -->
-        <div class="form-group">
-          <label class="form-label">プレイヤー名</label>
-          <div class="grid grid-4">
-            <input type="text" id="t-player-0" class="form-input" placeholder="プレイヤー1" oninput="App.saveTournament()">
-            <input type="text" id="t-player-1" class="form-input" placeholder="プレイヤー2" oninput="App.saveTournament()">
-            <input type="text" id="t-player-2" class="form-input" placeholder="プレイヤー3" oninput="App.saveTournament()">
-            <input type="text" id="t-player-3" class="form-input" placeholder="プレイヤー4" oninput="App.saveTournament()">
-          </div>
-        </div>
-
-        <!-- トータルスコア -->
-        <div id="tournament-totals" class="tournament-totals"></div>
-
-        <!-- 各半荘 -->
-        <div id="tournament-rounds"></div>
-
-        <!-- アクションボタン -->
-        <div class="history-actions" style="margin-top: var(--spacing-lg);">
-          <button class="btn btn-primary btn-block" onclick="App.addTournamentRound()">
-            ＋ 半荘を追加
-          </button>
-        </div>
-        <button class="btn btn-secondary btn-block mt-lg" onclick="App.showScreen('rule-selection')">
-          ← 戻る
         </button>
       </div>
     </div>

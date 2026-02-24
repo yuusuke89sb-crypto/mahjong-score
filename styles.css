@@ -257,77 +257,31 @@ body {
   background: #dc2626;
 }
 
-/* トータル集計 */
-.tournament-totals {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-lg);
-  padding: var(--spacing-md);
+/* カスタムルール設定 */
+.custom-rule-config {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
   background: var(--color-background);
+  border: 1px solid var(--color-primary);
   border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
+  animation: slideDown 0.3s ease;
 }
 
-.tournament-totals .t-total-item {
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-rule-config .form-input {
   text-align: center;
-  padding: var(--spacing-sm);
-}
-
-.tournament-totals .t-total-name {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-xs);
-}
-
-.tournament-totals .t-total-score {
-  font-size: var(--font-size-lg);
-  font-weight: 700;
-}
-
-.tournament-totals .t-total-score.positive {
-  color: var(--color-success);
-}
-
-.tournament-totals .t-total-score.negative {
-  color: var(--color-danger);
-}
-
-.tournament-totals .t-total-score.zero {
-  color: var(--color-text-secondary);
-}
-
-.tournament-totals .t-total-rank {
-  font-size: var(--font-size-xs);
-  margin-top: 2px;
-}
-
-.tournament-round {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
-  margin-bottom: var(--spacing-sm);
-  position: relative;
-}
-
-.tournament-round-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-sm);
-  font-weight: 600;
   font-size: var(--font-size-sm);
-}
-
-.tournament-round .grid-4 {
-  gap: var(--spacing-xs);
-}
-
-.tournament-round .form-input {
-  font-size: var(--font-size-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  text-align: center;
 }
 
 /* ヘッダー */

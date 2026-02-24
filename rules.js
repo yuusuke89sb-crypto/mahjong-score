@@ -337,5 +337,66 @@ const MahjongRules = {
 
             return results;
         }
+    },
+
+    /**
+     * カスタムルール
+     * ユーザーが持ち点・返し点・ウマ・オカを自由設定
+     */
+    custom: {
+        name: 'カスタムルール',
+        description: '自由設定',
+        startingPoints: 25000,
+        returnPoints: 30000,
+        scoreTableRule: 'wrc', // 切り上げ満貫
+        uma: { 1: 30, 2: 10, 3: -10, 4: -30 },
+        oka: 0,
+
+        calculateRankPoints(finalScores) {
+            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+
+            const results = [];
+            let currentRank = 1;
+            let i = 0;
+
+            while (i < sorted.length) {
+                const currentScore = sorted[i].score;
+                const sameScorePlayers = [];
+
+                while (i < sorted.length && sorted[i].score === currentScore) {
+                    sameScorePlayers.push(sorted[i]);
+                    i++;
+                }
+
+                // ウマを折半
+                let totalUma = 0;
+                for (let j = 0; j < sameScorePlayers.length; j++) {
+                    totalUma += this.uma[currentRank + j];
+                }
+                const averageUma = totalUma / sameScorePlayers.length;
+
+                // オカ（1位のみ、同着なら分割）
+                let okaBonus = 0;
+                for (let j = 0; j < sameScorePlayers.length; j++) {
+                    if (currentRank + j === 1) {
+                        okaBonus = this.oka / sameScorePlayers.length;
+                    }
+                }
+
+                for (const player of sameScorePlayers) {
+                    results.push({
+                        playerIndex: player.playerIndex,
+                        score: player.score,
+                        rank: currentRank,
+                        rankPoints: averageUma + okaBonus,
+                        isTied: sameScorePlayers.length > 1
+                    });
+                }
+
+                currentRank += sameScorePlayers.length;
+            }
+
+            return results;
+        }
     }
 };
