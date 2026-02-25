@@ -500,25 +500,214 @@ const Tenbou = {
 
     handleVoiceResult(text) {
         document.getElementById('voice-status').classList.add('hidden');
+
+        // まず完全パースを試みる
         const parsed = this.parseVoiceText(text);
 
-        if (!parsed) {
+        if (parsed) {
+            // 完全認識成功 → 従来通り確認表示
+            this.pendingVoiceAction = parsed;
             document.getElementById('voice-preview').classList.remove('hidden');
             document.getElementById('voice-preview-text').innerHTML =
                 `<div style="margin-bottom:8px">認識:「${text}」</div>` +
-                `<div style="color:var(--color-warning)">⚠️ 認識できませんでした</div>` +
-                `<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:8px">` +
-                `例: 「○○が2000/4000ツモ」「○○から○○へ3900ロン」</div>`;
-            this.pendingVoiceAction = null;
+                `<div style="font-size:var(--font-size-xl);font-weight:700">→ ${parsed.description}</div>`;
             return;
         }
 
-        this.pendingVoiceAction = parsed;
+        // 完全パース失敗 → 数字とアクションだけ抽出してプレイヤー選択UIを表示
+        const partial = this.parseVoicePartial(text);
+        if (partial) {
+            this.showVoicePlayerSelect(text, partial);
+            return;
+        }
+
+        // 何も認識できなかった
         document.getElementById('voice-preview').classList.remove('hidden');
         document.getElementById('voice-preview-text').innerHTML =
             `<div style="margin-bottom:8px">認識:「${text}」</div>` +
-            `<div style="font-size:var(--font-size-xl);font-weight:700">→ ${parsed.description}</div>`;
+            `<div style="color:var(--color-warning)">⚠️ 認識できませんでした</div>` +
+            `<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:8px">` +
+            `例:「2000の4000ツモ」「3900ロン」</div>`;
+        this.pendingVoiceAction = null;
     },
+
+    // 数字 + アクションタイプだけ抽出（プレイヤー名なし）
+    parseVoicePartial(text) {
+        let t = this.kanjiToNumber(text);
+        t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ');
+        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
+        t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
+        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン').replace(/ローン/g, 'ロン');
+        t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール');
+        t = t.replace(/([^\d\s])\/(\d)/g, '$1 $2');
+        t = t.replace(/(\d)\/([^\d\s])/g, '$1 $2');
+        t = t.replace(/([^\d\s])\/([^\d\s])/g, '$1 $2');
+        t = t.replace(/\s+/g, ' ').trim();
+
+        const numbers = t.match(/\d+/g);
+        const hasTsumo = /ツモ|つも/.test(t);
+        const hasRon = /ロン|ろん/.test(t);
+        const hasAll = /オール|おーる|all/i.test(t);
+        const hasChip = /チップ|ちっぷ|祝儀/.test(t);
+
+        // 麻雀用語チェック
+        const termMatch = t.match(/満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん/);
+        if (termMatch) {
+            const termData = this.mahjongTermToScore(termMatch[0]);
+            if (termData) {
+                if (hasTsumo) {
+                    return { type: 'tsumo-term', term: termMatch[0], termData, needPlayers: ['winner'] };
+                } else {
+                    return { type: 'ron-term', term: termMatch[0], termData, needPlayers: ['winner', 'loser'] };
+                }
+            }
+        }
+
+        if (numbers && numbers.length >= 2 && hasTsumo) {
+            const ko = parseInt(numbers[0]);
+            const oya = parseInt(numbers[1]);
+            if (ko > 0 && oya > 0) {
+                return { type: 'tsumo', ko, oya, needPlayers: ['winner'] };
+            }
+        }
+
+        if (numbers && numbers.length >= 1 && hasAll) {
+            const score = parseInt(numbers[0]);
+            if (score > 0) {
+                return { type: 'tsumo-all', score, needPlayers: ['winner'] };
+            }
+        }
+
+        if (numbers && numbers.length >= 1 && (hasRon || (!hasTsumo && !hasAll && !hasChip))) {
+            const score = parseInt(numbers[0]);
+            if (score > 0) {
+                return { type: 'ron', score, needPlayers: ['winner', 'loser'] };
+            }
+        }
+
+        if (numbers && numbers.length >= 1 && hasChip && this.state.chipEnabled) {
+            const count = parseInt(numbers[0]);
+            if (count > 0) {
+                return { type: 'chip', count, needPlayers: ['from', 'to'] };
+            }
+        }
+
+        // 数字だけでもツモっぽければ
+        if (numbers && numbers.length >= 2) {
+            const ko = parseInt(numbers[0]);
+            const oya = parseInt(numbers[1]);
+            if (ko > 0 && oya > 0 && oya >= ko) {
+                return { type: 'tsumo', ko, oya, needPlayers: ['winner'] };
+            }
+        }
+
+        return null;
+    },
+
+    // プレイヤー選択UIを表示
+    showVoicePlayerSelect(originalText, partial) {
+        this.pendingVoicePartial = partial;
+        this.voiceSelectedPlayers = {};
+
+        const preview = document.getElementById('voice-preview');
+        preview.classList.remove('hidden');
+
+        let desc = '';
+        if (partial.type === 'tsumo') desc = `${partial.ko.toLocaleString()}/${partial.oya.toLocaleString()} ツモ`;
+        else if (partial.type === 'tsumo-all') desc = `${partial.score.toLocaleString()}オール ツモ`;
+        else if (partial.type === 'tsumo-term') desc = `${partial.term} ツモ`;
+        else if (partial.type === 'ron') desc = `${partial.score.toLocaleString()}点 ロン`;
+        else if (partial.type === 'ron-term') desc = `${partial.term} ロン`;
+        else if (partial.type === 'chip') desc = `チップ${partial.count}枚`;
+
+        const labels = {
+            'winner': '和了者', 'loser': '放銃者',
+            'from': '渡す人', 'to': '受け取る人'
+        };
+
+        let playerSelectHTML = '';
+        for (const role of partial.needPlayers) {
+            playerSelectHTML += `
+                <div style="margin:12px 0">
+                    <div style="font-weight:600;margin-bottom:6px">${labels[role]}を選択:</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        ${this.state.players.map((name, i) => `
+                            <button class="player-select-btn" data-role="${role}" data-index="${i}"
+                                onclick="Tenbou.selectVoicePlayer('${role}', ${i}, this)"
+                                style="padding:10px 18px;font-size:16px;font-weight:700;border-radius:10px;border:2px solid var(--color-border);background:var(--color-bg-card);color:var(--color-text);cursor:pointer;transition:all 0.15s">
+                                ${name}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        document.getElementById('voice-preview-text').innerHTML =
+            `<div style="margin-bottom:8px">認識:「${originalText}」</div>` +
+            `<div style="font-size:var(--font-size-xl);font-weight:700;margin-bottom:12px">→ ${desc}</div>` +
+            playerSelectHTML;
+    },
+
+    selectVoicePlayer(role, index, btnElement) {
+        this.voiceSelectedPlayers[role] = index;
+
+        // 同じロールのボタンの選択状態をリセット
+        const siblings = btnElement.parentElement.querySelectorAll('.player-select-btn');
+        siblings.forEach(b => {
+            b.style.background = 'var(--color-bg-card)';
+            b.style.borderColor = 'var(--color-border)';
+            b.style.color = 'var(--color-text)';
+        });
+        btnElement.style.background = 'var(--color-primary)';
+        btnElement.style.borderColor = 'var(--color-primary)';
+        btnElement.style.color = '#fff';
+
+        // 全ロール選択済みか確認
+        const partial = this.pendingVoicePartial;
+        if (!partial) return;
+
+        const allSelected = partial.needPlayers.every(r => this.voiceSelectedPlayers[r] !== undefined);
+        if (allSelected) {
+            // 自動的にアクションを構築して反映
+            setTimeout(() => this.executeVoicePartial(), 300);
+        }
+    },
+
+    executeVoicePartial() {
+        const p = this.pendingVoicePartial;
+        const sel = this.voiceSelectedPlayers;
+        if (!p) return;
+
+        if (p.type === 'tsumo') {
+            this.processTsumo(sel.winner, p.ko, p.oya);
+        } else if (p.type === 'tsumo-all') {
+            this.processTsumo(sel.winner, p.score, p.score);
+        } else if (p.type === 'tsumo-term') {
+            const isDealer = sel.winner === this.state.dealerIndex;
+            if (isDealer) {
+                this.processTsumo(sel.winner, p.termData.tsumoAll, p.termData.tsumoAll);
+            } else {
+                this.processTsumo(sel.winner, p.termData.tsumoKo, p.termData.tsumoOya);
+            }
+        } else if (p.type === 'ron') {
+            if (sel.winner === sel.loser) { alert('和了者と放銃者は異なる必要があります'); return; }
+            this.processRon(sel.winner, sel.loser, p.score);
+        } else if (p.type === 'ron-term') {
+            if (sel.winner === sel.loser) { alert('和了者と放銃者は異なる必要があります'); return; }
+            const isDealer = sel.winner === this.state.dealerIndex;
+            const score = p.termData.ron[isDealer ? 1 : 0];
+            this.processRon(sel.winner, sel.loser, score);
+        } else if (p.type === 'chip') {
+            if (sel.from === sel.to) { alert('渡す人と受け取る人は異なる必要があります'); return; }
+            this.processChip(sel.from, sel.to, p.count);
+        }
+
+        this.pendingVoicePartial = null;
+        this.voiceSelectedPlayers = {};
+        document.getElementById('voice-preview').classList.add('hidden');
+    },
+
 
     // ========================================
     // 漢数字・日本語数字を算用数字に変換
