@@ -265,6 +265,7 @@ const Tenbou = {
         this.renderPlayers();
         this.renderHistory();
         this.saveState();
+        if (navigator.vibrate) navigator.vibrate(50);
     },
 
     // ===== Process Ron =====
@@ -294,6 +295,7 @@ const Tenbou = {
         this.renderPlayers();
         this.renderHistory();
         this.saveState();
+        if (navigator.vibrate) navigator.vibrate(50);
     },
 
     // ===== Process Chip =====
@@ -315,6 +317,94 @@ const Tenbou = {
         this.renderPlayers();
         this.renderHistory();
         this.saveState();
+        if (navigator.vibrate) navigator.vibrate(50);
+    },
+
+    // ===== Process Tsumo Chips (全員からチップ受取) =====
+    processTsumoChips(winnerIdx, countPerPerson) {
+        const chipDiffs = [0, 0, 0, 0];
+        for (let i = 0; i < 4; i++) {
+            if (i === winnerIdx) continue;
+            chipDiffs[i] = -countPerPerson;
+            chipDiffs[winnerIdx] += countPerPerson;
+            this.state.chips[i] -= countPerPerson;
+            this.state.chips[winnerIdx] += countPerPerson;
+        }
+
+        const winner = this.state.players[winnerIdx];
+        const total = countPerPerson * 3;
+        const desc = `🎰 ${winner} チップ+${total}枚 (各${countPerPerson}枚×3人)`;
+
+        const entry = {
+            type: 'tsumo-chip', description: desc,
+            scoreDiffs: [0, 0, 0, 0], chipDiffs,
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba
+        };
+        this.state.history.push(entry);
+
+        this.renderPlayers();
+        this.renderHistory();
+        this.saveState();
+    },
+
+    // ===== Process Ryukyoku (Draw) =====
+    processRyukyoku() {
+        const desc = `流局 (${this.state.honba}本場)`;
+        const entry = {
+            type: 'ryukyoku', description: desc,
+            scoreDiffs: [0, 0, 0, 0], chipDiffs: [0, 0, 0, 0],
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba
+        };
+        this.state.history.push(entry);
+        this.state.honba++;
+        // 供託はそのまま維持（立直棒が乗る）
+
+        this.renderPlayers();
+        this.renderHistory();
+        this.saveState();
+        if (navigator.vibrate) navigator.vibrate(50);
+    },
+
+    // ===== Process Riichi =====
+    showRiichiSelect() {
+        const panel = document.getElementById('riichi-select');
+        panel.classList.remove('hidden');
+        const container = document.getElementById('riichi-player-select');
+        container.innerHTML = '';
+        for (let i = 0; i < 4; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'player-select-btn';
+            btn.textContent = this.state.players[i];
+            btn.onclick = () => {
+                this.processRiichi(i);
+                panel.classList.add('hidden');
+            };
+            container.appendChild(btn);
+        }
+    },
+
+    processRiichi(playerIdx) {
+        const scoreDiffs = [0, 0, 0, 0];
+        scoreDiffs[playerIdx] = -1000;
+
+        this.state.scores[playerIdx] -= 1000;
+        this.state.kyoutaku += 1000;
+
+        const name = this.state.players[playerIdx];
+        const desc = `🔴 ${name} 立直宣言 (-1,000点 供託へ)`;
+
+        const entry = {
+            type: 'riichi', description: desc, scoreDiffs,
+            chipDiffs: [0, 0, 0, 0],
+            prevKyoutaku: this.state.kyoutaku - 1000,
+            prevHonba: this.state.honba
+        };
+        this.state.history.push(entry);
+
+        this.renderPlayers();
+        this.renderHistory();
+        this.saveState();
+        if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
     },
 
     // ===== Undo =====
@@ -359,9 +449,14 @@ const Tenbou = {
             title.textContent = '✋ ツモ入力';
             document.getElementById('manual-tsumo').classList.remove('hidden');
             this.renderPlayerSelect('tsumo-winner-select', (idx) => { this.selectedWinner = idx; });
-            // Clear inputs
             document.getElementById('tsumo-ko').value = '';
             document.getElementById('tsumo-oya').value = '';
+            // チップ欄の表示/非表示
+            const chipSection = document.getElementById('tsumo-chip-section');
+            if (chipSection) {
+                chipSection.style.display = this.state.chipEnabled ? '' : 'none';
+                document.getElementById('tsumo-chip-count').value = '0';
+            }
         } else if (mode === 'ron') {
             title.textContent = '👊 ロン入力';
             document.getElementById('manual-ron').classList.remove('hidden');
@@ -408,12 +503,19 @@ const Tenbou = {
 
             if (ko <= 0) { alert('子の支払いを入力してください'); return; }
 
-            // If winner is dealer, oya score is not needed (it's ko all)
-            // If winner is not dealer and oya is 0, assume it's ko for oya too (unlikely)
             const isDealer = this.selectedWinner === this.state.dealerIndex;
             const oyaScore = isDealer ? ko : (oya > 0 ? oya : ko * 2);
 
             this.processTsumo(this.selectedWinner, ko, oyaScore);
+
+            // ツモ時チップ処理（3人から受け取る）
+            if (this.state.chipEnabled) {
+                const chipCount = parseInt(document.getElementById('tsumo-chip-count').value) || 0;
+                if (chipCount > 0) {
+                    this.processTsumoChips(this.selectedWinner, chipCount);
+                }
+            }
+
             this.hideManualInput();
         } else if (this.manualMode === 'ron') {
             if (this.selectedWinner === null) { alert('和了者を選択してください'); return; }
@@ -439,6 +541,33 @@ const Tenbou = {
     },
 
     // ===== Voice Recognition =====
+
+    // 音声テキストの共通正規化（誤認識修正）
+    normalizeVoiceText(text) {
+        let t = text;
+        // 全角数字→半角
+        t = t.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+        // ツモ系の誤認識
+        t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ').replace(/ツボ/g, 'ツモ');
+        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
+        t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
+        t = t.replace(/つもり/g, 'ツモ').replace(/ツモり/g, 'ツモ');
+        // ロン系の誤認識
+        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン').replace(/ローン/g, 'ロン');
+        t = t.replace(/ロング/g, 'ロン').replace(/ろんぐ/g, 'ロン');
+        // オール系
+        t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール').replace(/ALL/gi, 'オール');
+        // プレイヤー名 (A/B/C/D + 助詞) の誤認識
+        t = t.replace(/映画/g, 'Aが').replace(/エイガ/g, 'Aが').replace(/えいが/g, 'Aが');
+        t = t.replace(/栄が/g, 'Aが').replace(/永が/g, 'Aが').replace(/英が/g, 'Aが');
+        t = t.replace(/美が/g, 'Bが').replace(/火が/g, 'Bが').replace(/日が/g, 'Bが').replace(/微が/g, 'Bが');
+        t = t.replace(/滋賀/g, 'Cが').replace(/シガ/g, 'Cが').replace(/しが/g, 'Cが').replace(/市が/g, 'Cが').replace(/志賀/g, 'Cが');
+        t = t.replace(/出が/g, 'Dが').replace(/ディーが/g, 'Dが').replace(/デイが/g, 'Dが').replace(/でが/g, 'Dが');
+        t = t.replace(/永から/g, 'Aから').replace(/栄から/g, 'Aから').replace(/英から/g, 'Aから');
+        t = t.replace(/死から/g, 'Cから').replace(/市から/g, 'Cから').replace(/しから/g, 'Cから');
+        return t;
+    },
+
     startVoice() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
@@ -449,40 +578,43 @@ const Tenbou = {
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'ja-JP';
         this.recognition.continuous = false;
-        this.recognition.interimResults = true; // リアルタイムで途中結果を表示
+        this.recognition.interimResults = true;
 
         document.getElementById('voice-status').classList.remove('hidden');
-        document.getElementById('voice-text').textContent = '聴いています...';
+        document.getElementById('voice-text').textContent = '🎤 聴いています...';
         document.getElementById('voice-btn').classList.add('listening');
 
         this.recognition.onresult = (event) => {
             const result = event.results[0];
             const transcript = result[0].transcript;
 
+            // 途中結果も正規化して表示（坪→ツモ等をリアルタイム修正）
+            const normalized = this.normalizeVoiceText(transcript);
+
             if (result.isFinal) {
-                console.log('音声認識確定:', transcript);
-                this.handleVoiceResult(transcript);
+                console.log('音声認識確定:', transcript, '→ 正規化:', normalized);
+                this.handleVoiceResult(normalized);
             } else {
-                // 途中結果をリアルタイム表示
-                document.getElementById('voice-text').textContent = `🎤 ${transcript}`;
+                document.getElementById('voice-text').textContent = `🎤 ${normalized}`;
             }
         };
 
         this.recognition.onerror = (event) => {
             console.error('音声認識エラー:', event.error);
             const msg = {
-                'no-speech': '音声が検出されませんでした',
+                'no-speech': '音声が検出されませんでした。もう一度お試しください。',
                 'audio-capture': 'マイクが見つかりません',
-                'not-allowed': 'マイクの使用が許可されていません',
-                'network': 'ネットワークエラー',
-            }[event.error] || event.error;
+                'not-allowed': 'マイクの使用が許可されていません。\n設定からマイクを許可してください。',
+                'network': 'ネットワークエラー。接続を確認してください。',
+                'aborted': '中断されました',
+            }[event.error] || `エラー: ${event.error}`;
             document.getElementById('voice-text').textContent = `⚠️ ${msg}`;
-            setTimeout(() => this.stopVoice(), 2000);
+            setTimeout(() => this.stopVoice(), 2500);
         };
 
         this.recognition.onend = () => {
             document.getElementById('voice-btn').classList.remove('listening');
-            if (!this.pendingVoiceAction) {
+            if (!this.pendingVoiceAction && !this.pendingVoicePartial) {
                 document.getElementById('voice-status').classList.add('hidden');
             }
         };
@@ -497,6 +629,7 @@ const Tenbou = {
         document.getElementById('voice-status').classList.add('hidden');
         document.getElementById('voice-btn').classList.remove('listening');
     },
+
 
     handleVoiceResult(text) {
         document.getElementById('voice-status').classList.add('hidden');
@@ -851,22 +984,8 @@ const Tenbou = {
     parseVoiceText(text) {
         console.log('parseVoiceText入力:', text);
 
-        // 前処理: 漢数字→算用数字、正規化
+        // 前処理: 漢数字→算用数字（誤認識修正はnormalizeVoiceTextで済み）
         let t = this.kanjiToNumber(text);
-        // よくある誤認識の修正
-        // プレイヤー名 (A/B/C/D + 助詞)
-        t = t.replace(/映画/g, 'Aが').replace(/エイガ/g, 'Aが').replace(/えいが/g, 'Aが');
-        t = t.replace(/美が/g, 'Bが').replace(/火が/g, 'Bが').replace(/日が/g, 'Bが');
-        t = t.replace(/滋賀/g, 'Cが').replace(/シガ/g, 'Cが').replace(/しが/g, 'Cが');
-        t = t.replace(/出が/g, 'Dが').replace(/デイが/g, 'Dが').replace(/ディーが/g, 'Dが');
-        t = t.replace(/永から/g, 'Aから').replace(/栄から/g, 'Aから');
-        t = t.replace(/死から/g, 'Cから').replace(/市から/g, 'Cから');
-        // ツモ・ロン
-        t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ');
-        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
-        t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
-        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン').replace(/ローン/g, 'ロン');
-        t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール');
         // スペースを正規化（複数→1つ）し、前後をトリム
         t = t.replace(/\s+/g, ' ').trim();
         // kanjiToNumberで入った区切り「/」のクリーンアップ:

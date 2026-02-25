@@ -162,15 +162,34 @@
                 <button class="btn btn-manual" onclick="Tenbou.showManualInput('ron')">
                     <span>👊 ロン</span>
                 </button>
+                <button class="btn btn-manual" onclick="Tenbou.showRiichiSelect()"
+                    style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff">
+                    <span>🔴 立直</span>
+                </button>
+                <button class="btn btn-manual" onclick="Tenbou.processRyukyoku()"
+                    style="background:var(--color-bg-hover)">
+                    <span>💨 流局</span>
+                </button>
                 <button id="chip-action-btn" class="btn btn-chip" onclick="Tenbou.showManualInput('chip')">
                     <span>🎰 チップ</span>
                 </button>
             </div>
 
+            <!-- 立直プレイヤー選択 -->
+            <div id="riichi-select" class="voice-preview hidden">
+                <div class="card">
+                    <h3>🔴 立直宣言</h3>
+                    <p style="margin-bottom:12px;color:var(--color-text-secondary)">立直するプレイヤーを選択（-1000点供託）</p>
+                    <div class="player-select" id="riichi-player-select"></div>
+                </div>
+            </div>
+
             <!-- 音声認識ステータス -->
             <div id="voice-status" class="voice-status hidden">
                 <div class="voice-pulse"></div>
-                <p id="voice-text" class="voice-text">聴いています...</p>
+                <p id="voice-text" class="voice-text">🎤 聴いています...</p>
+                <p style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin:4px 0">
+                    例:「2000の4000ツモ」「3900ロン」</p>
                 <button class="btn btn-sm btn-secondary" onclick="Tenbou.stopVoice()">キャンセル</button>
             </div>
 
@@ -212,6 +231,15 @@
                                 </div>
                             </div>
                             <p class="form-hint">※ 親のツモの場合は「子の支払い」のみ入力（＝オール）</p>
+                        </div>
+                        <div id="tsumo-chip-section" class="form-group" style="display:none">
+                            <label class="form-label">🎰 チップ（全員から受取）</label>
+                            <div style="display:flex;align-items:center;gap:12px">
+                                <input type="number" id="tsumo-chip-count" class="form-input" value="0" min="0"
+                                    style="max-width:100px">
+                                <span class="form-hint">枚×3人分</span>
+                            </div>
+                            <p class="form-hint">※ 各対戦者から受け取るチップ枚数</p>
                         </div>
                     </div>
 
@@ -292,7 +320,7 @@
         製作者：吉村　悠佑
     </footer>
 
-    <script src="tenbou.js"></script>
+    <script src="tenbou.js?v=11"></script>
 </body>
 
 </html>
