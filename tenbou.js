@@ -665,6 +665,14 @@ const Tenbou = {
         // 前処理: 漢数字→算用数字、正規化
         let t = this.kanjiToNumber(text);
         // よくある誤認識の修正
+        // プレイヤー名 (A/B/C/D + 助詞)
+        t = t.replace(/映画/g, 'Aが').replace(/エイガ/g, 'Aが').replace(/えいが/g, 'Aが');
+        t = t.replace(/美が/g, 'Bが').replace(/火が/g, 'Bが').replace(/日が/g, 'Bが');
+        t = t.replace(/滋賀/g, 'Cが').replace(/シガ/g, 'Cが').replace(/しが/g, 'Cが');
+        t = t.replace(/出が/g, 'Dが').replace(/デイが/g, 'Dが').replace(/ディーが/g, 'Dが');
+        t = t.replace(/永から/g, 'Aから').replace(/栄から/g, 'Aから');
+        t = t.replace(/死から/g, 'Cから').replace(/市から/g, 'Cから');
+        // ツモ・ロン
         t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ');
         t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
         t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
@@ -672,8 +680,12 @@ const Tenbou = {
         t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール');
         // スペースを正規化（複数→1つ）し、前後をトリム
         t = t.replace(/\s+/g, ' ').trim();
-        // kanjiToNumberで入った区切り「/」の前後のスペースを除去
-        t = t.replace(/\s*\/\s*/g, '/');
+        // kanjiToNumberで入った区切り「/」のクリーンアップ:
+        // 数字/数字 の形だけ残し（例: 2000/4000）、他の/はスペースに置換
+        t = t.replace(/([^\d\s])\/(\d)/g, '$1 $2');  // 非数字/数字 → スペース
+        t = t.replace(/(\d)\/([^\d\s])/g, '$1 $2');  // 数字/非数字 → スペース
+        t = t.replace(/([^\d\s])\/([^\d\s])/g, '$1 $2'); // 非数字/非数字 → スペース
+        t = t.replace(/\s+/g, ' ').trim();
 
         console.log('正規化後:', t);
 
