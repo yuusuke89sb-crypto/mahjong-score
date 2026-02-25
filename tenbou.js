@@ -449,22 +449,35 @@ const Tenbou = {
         this.recognition = new SpeechRecognition();
         this.recognition.lang = 'ja-JP';
         this.recognition.continuous = false;
-        this.recognition.interimResults = false;
+        this.recognition.interimResults = true; // リアルタイムで途中結果を表示
 
         document.getElementById('voice-status').classList.remove('hidden');
         document.getElementById('voice-text').textContent = '聴いています...';
         document.getElementById('voice-btn').classList.add('listening');
 
         this.recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
-            console.log('音声認識結果:', transcript);
-            this.handleVoiceResult(transcript);
+            const result = event.results[0];
+            const transcript = result[0].transcript;
+
+            if (result.isFinal) {
+                console.log('音声認識確定:', transcript);
+                this.handleVoiceResult(transcript);
+            } else {
+                // 途中結果をリアルタイム表示
+                document.getElementById('voice-text').textContent = `🎤 ${transcript}`;
+            }
         };
 
         this.recognition.onerror = (event) => {
             console.error('音声認識エラー:', event.error);
-            document.getElementById('voice-text').textContent = `エラー: ${event.error}`;
-            setTimeout(() => this.stopVoice(), 1500);
+            const msg = {
+                'no-speech': '音声が検出されませんでした',
+                'audio-capture': 'マイクが見つかりません',
+                'not-allowed': 'マイクの使用が許可されていません',
+                'network': 'ネットワークエラー',
+            }[event.error] || event.error;
+            document.getElementById('voice-text').textContent = `⚠️ ${msg}`;
+            setTimeout(() => this.stopVoice(), 2000);
         };
 
         this.recognition.onend = () => {
@@ -491,101 +504,365 @@ const Tenbou = {
 
         if (!parsed) {
             document.getElementById('voice-preview').classList.remove('hidden');
-            document.getElementById('voice-preview-text').textContent = `「${text}」\n\n認識できませんでした。もう一度お試しください。`;
+            document.getElementById('voice-preview-text').innerHTML =
+                `<div style="margin-bottom:8px">認識:「${text}」</div>` +
+                `<div style="color:var(--color-warning)">⚠️ 認識できませんでした</div>` +
+                `<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:8px">` +
+                `例: 「○○が2000/4000ツモ」「○○から○○へ3900ロン」</div>`;
             this.pendingVoiceAction = null;
             return;
         }
 
         this.pendingVoiceAction = parsed;
         document.getElementById('voice-preview').classList.remove('hidden');
-        document.getElementById('voice-preview-text').textContent = `「${text}」\n\n→ ${parsed.description}`;
+        document.getElementById('voice-preview-text').innerHTML =
+            `<div style="margin-bottom:8px">認識:「${text}」</div>` +
+            `<div style="font-size:var(--font-size-xl);font-weight:700">→ ${parsed.description}</div>`;
     },
 
-    parseVoiceText(text) {
-        // Normalize
-        const t = text.replace(/\s+/g, '').toLowerCase();
-        const names = this.state.players.map(n => n.toLowerCase());
+    // ========================================
+    // 漢数字・日本語数字を算用数字に変換
+    // ========================================
+    kanjiToNumber(str) {
+        // まず全角数字→半角
+        let s = str.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
 
-        // Find player by name
-        const findPlayer = (str) => {
-            for (let i = 0; i < 4; i++) {
-                if (str.includes(names[i])) return i;
+        // 単純な漢数字マッピング
+        const kanjiDigits = { '零': '0', '〇': '0', '一': '1', '二': '2', '三': '3', '四': '4', '五': '5', '六': '6', '七': '7', '八': '8', '九': '9' };
+
+        // 漢数字による大きい数の解析 (例: 二千, 三千九百, 八千)
+        const parseKanjiNum = (input) => {
+            let result = 0;
+            let current = 0;
+            for (let i = 0; i < input.length; i++) {
+                const ch = input[i];
+                if (kanjiDigits[ch] !== undefined) {
+                    current = parseInt(kanjiDigits[ch]);
+                } else if (ch === '万') {
+                    result += (current || 1) * 10000;
+                    current = 0;
+                } else if (ch === '千' || ch === 'せん' || ch === 'ぜん') {
+                    result += (current || 1) * 1000;
+                    current = 0;
+                } else if (ch === '百' || ch === 'ひゃく' || ch === 'びゃく' || ch === 'ぴゃく') {
+                    result += (current || 1) * 100;
+                    current = 0;
+                } else if (ch === '十') {
+                    result += (current || 1) * 10;
+                    current = 0;
+                }
             }
-            return -1;
+            result += current;
+            return result;
         };
 
-        // Pattern 1: "Aが2000/4000ツモ" or "Aが2000 4000ツモ"
-        const tsumoMatch = t.match(/(.+?)が(\d+)[\/／](\d+)(?:ツモ|つも)/i) ||
-            t.match(/(.+?)が(\d+)\s*(\d+)(?:ツモ|つも)/i);
-        if (tsumoMatch) {
-            const winner = findPlayer(tsumoMatch[1]);
-            if (winner >= 0) {
-                const ko = parseInt(tsumoMatch[2]);
-                const oya = parseInt(tsumoMatch[3]);
-                return {
-                    type: 'tsumo',
-                    winnerIdx: winner,
-                    koScore: ko,
-                    oyaScore: oya,
-                    description: `${this.state.players[winner]} ${ko.toLocaleString()}/${oya.toLocaleString()} ツモ`
-                };
+        // ひらがな数字パターンの置換テーブル
+        const kanaNumbers = {
+            'いっせん': '1000', 'にせん': '2000', 'さんぜん': '3000', 'よんせん': '4000',
+            'ごせん': '5000', 'ろくせん': '6000', 'ななせん': '7000', 'はっせん': '8000',
+            'きゅうせん': '9000',
+            'いちまん': '10000', 'にまん': '20000', 'さんまん': '30000', 'よんまん': '40000',
+            'ごまん': '50000',
+            'せん': '1000',
+            // 下位桁
+            'ひゃく': '100', 'にひゃく': '200', 'さんびゃく': '300', 'よんひゃく': '400',
+            'ごひゃく': '500', 'ろっぴゃく': '600', 'ななひゃく': '700', 'はっぴゃく': '800',
+            'きゅうひゃく': '900',
+        };
+
+        // ひらがな複合パターン (例: にせんよんせん → 2000 4000)
+        for (const [kana, num] of Object.entries(kanaNumbers).sort((a, b) => b[0].length - a[0].length)) {
+            s = s.replace(new RegExp(kana, 'g'), num);
+        }
+
+        // 漢字パターン (例: 二千 → 2000, 三千九百 → 3900)
+        const kanjiNumPattern = /([零〇一二三四五六七八九十百千万]+)/g;
+        s = s.replace(kanjiNumPattern, (match) => {
+            const val = parseKanjiNum(match);
+            return val > 0 ? val.toString() : match;
+        });
+
+        return s;
+    },
+
+    // ========================================
+    // 麻雀用語を点数に変換
+    // ========================================
+    mahjongTermToScore(term, isDealer) {
+        // ツモの場合: {ko, oya} を返す / ロンの場合: 数値を返す
+        const terms = {
+            // ロン点 (子/親)
+            '満貫': { ron: [8000, 12000], tsumoKo: 2000, tsumoOya: 4000, tsumoAll: 4000 },
+            'まんがん': { ron: [8000, 12000], tsumoKo: 2000, tsumoOya: 4000, tsumoAll: 4000 },
+            'マンガン': { ron: [8000, 12000], tsumoKo: 2000, tsumoOya: 4000, tsumoAll: 4000 },
+            '跳満': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
+            'はねまん': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
+            'ハネマン': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
+            'はね満': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
+            '倍満': { ron: [16000, 24000], tsumoKo: 4000, tsumoOya: 8000, tsumoAll: 8000 },
+            'ばいまん': { ron: [16000, 24000], tsumoKo: 4000, tsumoOya: 8000, tsumoAll: 8000 },
+            'バイマン': { ron: [16000, 24000], tsumoKo: 4000, tsumoOya: 8000, tsumoAll: 8000 },
+            '三倍満': { ron: [24000, 36000], tsumoKo: 6000, tsumoOya: 12000, tsumoAll: 12000 },
+            'さんばいまん': { ron: [24000, 36000], tsumoKo: 6000, tsumoOya: 12000, tsumoAll: 12000 },
+            '役満': { ron: [32000, 48000], tsumoKo: 8000, tsumoOya: 16000, tsumoAll: 16000 },
+            'やくまん': { ron: [32000, 48000], tsumoKo: 8000, tsumoOya: 16000, tsumoAll: 16000 },
+        };
+        return terms[term] || null;
+    },
+
+    // ========================================
+    // プレイヤー名のファジーマッチ
+    // ========================================
+    findPlayerFuzzy(str) {
+        const s = str.toLowerCase().trim();
+        if (!s) return -1;
+
+        const names = this.state.players.map(n => n.toLowerCase());
+
+        // 完全一致
+        for (let i = 0; i < 4; i++) {
+            if (s === names[i]) return i;
+        }
+
+        // 部分一致（名前が文字列に含まれる）
+        for (let i = 0; i < 4; i++) {
+            if (s.includes(names[i]) || names[i].includes(s)) return i;
+        }
+
+        // 最初の1文字一致（短い名前の場合）
+        for (let i = 0; i < 4; i++) {
+            if (names[i].length >= 1 && s.startsWith(names[i][0])) return i;
+        }
+
+        // 風の呼び方にもマッチ
+        const windNames = [
+            ['東', 'ひがし', 'トン', 'とん', '東家', 'とんちゃ'],
+            ['南', 'みなみ', 'ナン', 'なん', '南家', 'なんちゃ'],
+            ['西', 'にし', 'シャー', 'しゃー', '西家', 'しゃーちゃ'],
+            ['北', 'きた', 'ペー', 'ぺー', '北家', 'ぺーちゃ'],
+        ];
+        for (let i = 0; i < 4; i++) {
+            for (const alias of windNames[i]) {
+                if (s.includes(alias)) return i;
             }
         }
 
-        // Pattern 2: "Aが8000オール" (dealer tsumo)
-        const allMatch = t.match(/(.+?)が(\d+)(?:オール|おーる|all)/i);
-        if (allMatch) {
-            const winner = findPlayer(allMatch[1]);
-            if (winner >= 0) {
-                const score = parseInt(allMatch[2]);
-                return {
-                    type: 'tsumo',
-                    winnerIdx: winner,
-                    koScore: score,
-                    oyaScore: score,
-                    description: `${this.state.players[winner]} ${score.toLocaleString()}オール ツモ`
-                };
-            }
-        }
+        return -1;
+    },
 
-        // Pattern 3: "AからBへ3900ロン" or "AからBに3900"
-        const ronMatch = t.match(/(.+?)から(.+?)[へに](\d+)(?:ロン|ろん|点)?/i) ||
-            t.match(/(.+?)が(.+?)から(\d+)(?:ロン|ろん)/i);
-        if (ronMatch) {
-            // Check if it's a chip transaction
-            if (t.includes('チップ') || t.includes('ちっぷ')) {
-                // handled below
-            } else {
-                const loser = findPlayer(ronMatch[1]);
-                const winner = findPlayer(ronMatch[2]);
-                if (loser >= 0 && winner >= 0 && loser !== winner) {
-                    const score = parseInt(ronMatch[3]);
+    // ========================================
+    // メインの音声テキスト解析
+    // ========================================
+    parseVoiceText(text) {
+        console.log('parseVoiceText入力:', text);
+
+        // 前処理: 漢数字→算用数字、正規化
+        let t = this.kanjiToNumber(text);
+        t = t.replace(/\s+/g, '');
+        // よくある誤認識の修正
+        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'つも');
+        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン');
+        t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール');
+
+        console.log('正規化後:', t);
+
+        const findPlayer = (str) => this.findPlayerFuzzy(str);
+
+        // ============ ツモパターン ============
+
+        // パターン1: "Aが2000/4000ツモ" or "A 2000の4000ツモ" or "A 2000 4000 ツモ"
+        const tsumoPatterns = [
+            /(.+?)(?:が|の|は)[\s]*(\d+)[\s]*[\/／の][\s]*(\d+)[\s]*(?:ツモ|つも|積も)/,
+            /(.+?)[\s]+(\d+)[\s]*[\/／の][\s]*(\d+)[\s]*(?:ツモ|つも)/,
+            /(.+?)(?:が|の|は)[\s]*(\d+)[\s]+(\d+)[\s]*(?:ツモ|つも)/,
+            /(.+?)[\s]+(\d+)[\s]+(\d+)[\s]*(?:ツモ|つも)/,
+            // "2000/4000 Aがツモ" (逆順)
+            /(\d+)[\s]*[\/／の][\s]*(\d+)[\s]*(.+?)(?:が|の)[\s]*(?:ツモ|つも)/,
+        ];
+        for (const pat of tsumoPatterns) {
+            const m = t.match(pat);
+            if (m) {
+                let winner, ko, oya;
+                if (/^\d+$/.test(m[1])) {
+                    // 逆順パターン
+                    ko = parseInt(m[1]);
+                    oya = parseInt(m[2]);
+                    winner = findPlayer(m[3]);
+                } else {
+                    winner = findPlayer(m[1]);
+                    ko = parseInt(m[2]);
+                    oya = parseInt(m[3]);
+                }
+                if (winner >= 0 && ko > 0 && oya > 0) {
                     return {
-                        type: 'ron',
-                        winnerIdx: winner,
-                        loserIdx: loser,
-                        score: score,
-                        description: `${this.state.players[loser]}→${this.state.players[winner]} ${score.toLocaleString()}点 ロン`
+                        type: 'tsumo', winnerIdx: winner, koScore: ko, oyaScore: oya,
+                        description: `${this.state.players[winner]} ${ko.toLocaleString()}/${oya.toLocaleString()} ツモ`
                     };
                 }
             }
         }
 
-        // Pattern 4: "AからBへチップ3枚" or "AからBに2枚チップ"
-        const chipMatch = t.match(/(.+?)から(.+?)[へに](?:チップ|ちっぷ)\s*(\d+)\s*(?:枚|まい)/i) ||
-            t.match(/(.+?)から(.+?)[へに](\d+)\s*(?:枚|まい)\s*(?:チップ|ちっぷ)/i);
-        if (chipMatch && this.state.chipEnabled) {
-            const from = findPlayer(chipMatch[1]);
-            const to = findPlayer(chipMatch[2]);
-            if (from >= 0 && to >= 0 && from !== to) {
-                const count = parseInt(chipMatch[3]);
-                return {
-                    type: 'chip',
-                    fromIdx: from,
-                    toIdx: to,
-                    count: count,
-                    description: `${this.state.players[from]}→${this.state.players[to]} チップ${count}枚`
-                };
+        // パターン2: "Aが8000オール" / "Aが4000点オール" (親ツモ)
+        const allPatterns = [
+            /(.+?)(?:が|の|は)[\s]*(\d+)[\s]*(?:点)?[\s]*(?:オール|おーる|all|オル)/i,
+            /(\d+)[\s]*(?:点)?[\s]*(?:オール|おーる|all)[\s]*(.+?)(?:が|の)[\s]*(?:ツモ|つも)/i,
+        ];
+        for (const pat of allPatterns) {
+            const m = t.match(pat);
+            if (m) {
+                let winner, score;
+                if (/^\d+$/.test(m[1])) {
+                    score = parseInt(m[1]);
+                    winner = findPlayer(m[2]);
+                } else {
+                    winner = findPlayer(m[1]);
+                    score = parseInt(m[2]);
+                }
+                if (winner >= 0 && score > 0) {
+                    return {
+                        type: 'tsumo', winnerIdx: winner, koScore: score, oyaScore: score,
+                        description: `${this.state.players[winner]} ${score.toLocaleString()}オール ツモ`
+                    };
+                }
+            }
+        }
+
+        // パターン3: 麻雀用語ツモ "Aが満貫ツモ" / "Aが跳満ツモ"
+        const termTsumoPatterns = [
+            /(.+?)(?:が|の|は)[\s]*(満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん)[\s]*(?:ツモ|つも)/,
+        ];
+        for (const pat of termTsumoPatterns) {
+            const m = t.match(pat);
+            if (m) {
+                const winner = findPlayer(m[1]);
+                const termData = this.mahjongTermToScore(m[2]);
+                if (winner >= 0 && termData) {
+                    const isDealer = winner === this.state.dealerIndex;
+                    if (isDealer) {
+                        return {
+                            type: 'tsumo', winnerIdx: winner, koScore: termData.tsumoAll, oyaScore: termData.tsumoAll,
+                            description: `${this.state.players[winner]} ${m[2]} ${termData.tsumoAll.toLocaleString()}オール ツモ`
+                        };
+                    } else {
+                        return {
+                            type: 'tsumo', winnerIdx: winner, koScore: termData.tsumoKo, oyaScore: termData.tsumoOya,
+                            description: `${this.state.players[winner]} ${m[2]} ${termData.tsumoKo.toLocaleString()}/${termData.tsumoOya.toLocaleString()} ツモ`
+                        };
+                    }
+                }
+            }
+        }
+
+        // ============ ロンパターン ============
+
+        // チップ系キーワードがあればロンとして処理しない
+        const isChipContext = /チップ|ちっぷ|祝儀|しゅうぎ/.test(t);
+
+        if (!isChipContext) {
+            // パターン4: "AからBへ3900ロン" / "AからBに3900" / "AからBへ3900点"
+            const ronPatterns = [
+                /(.+?)から(.+?)[へに][\s]*(\d+)[\s]*(?:点)?[\s]*(?:ロン|ろん)?/,
+                /(.+?)が(.+?)(?:から|に)[\s]*(\d+)[\s]*(?:点)?[\s]*(?:ロン|ろん)/,
+                // "3900点 AからBへロン"
+                /(\d+)[\s]*(?:点)?[\s]*(.+?)から(.+?)[へに][\s]*(?:ロン|ろん)/,
+                // "BがAに3900ロン" (和了者が主語)
+                /(.+?)が(.+?)[へに][\s]*(\d+)[\s]*(?:点)?[\s]*(?:ロン|ろん)/,
+            ];
+            for (const pat of ronPatterns) {
+                const m = t.match(pat);
+                if (m) {
+                    let loser, winner, score;
+                    if (/^\d+$/.test(m[1])) {
+                        score = parseInt(m[1]);
+                        loser = findPlayer(m[2]);
+                        winner = findPlayer(m[3]);
+                    } else if (pat === ronPatterns[3]) {
+                        // "BがAに3900ロン" → B=winner, A=loser
+                        winner = findPlayer(m[1]);
+                        loser = findPlayer(m[2]);
+                        score = parseInt(m[3]);
+                    } else {
+                        loser = findPlayer(m[1]);
+                        winner = findPlayer(m[2]);
+                        score = parseInt(m[3]);
+                    }
+                    if (loser >= 0 && winner >= 0 && loser !== winner && score > 0) {
+                        return {
+                            type: 'ron', winnerIdx: winner, loserIdx: loser, score: score,
+                            description: `${this.state.players[loser]}→${this.state.players[winner]} ${score.toLocaleString()}点 ロン`
+                        };
+                    }
+                }
+            }
+
+            // パターン5: 麻雀用語ロン "AからBへ満貫ロン" / "AからBに跳満"
+            const termRonPatterns = [
+                /(.+?)から(.+?)[へに][\s]*(満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん)[\s]*(?:ロン|ろん)?/,
+                /(.+?)が(.+?)[へに][\s]*(満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん)[\s]*(?:ロン|ろん)/,
+            ];
+            for (const pat of termRonPatterns) {
+                const m = t.match(pat);
+                if (m) {
+                    let loser, winner;
+                    if (pat === termRonPatterns[1]) {
+                        winner = findPlayer(m[1]);
+                        loser = findPlayer(m[2]);
+                    } else {
+                        loser = findPlayer(m[1]);
+                        winner = findPlayer(m[2]);
+                    }
+                    const termData = this.mahjongTermToScore(m[3]);
+                    if (loser >= 0 && winner >= 0 && loser !== winner && termData) {
+                        const isWinnerDealer = winner === this.state.dealerIndex;
+                        const score = termData.ron[isWinnerDealer ? 1 : 0];
+                        return {
+                            type: 'ron', winnerIdx: winner, loserIdx: loser, score: score,
+                            description: `${this.state.players[loser]}→${this.state.players[winner]} ${m[3]} ${score.toLocaleString()}点 ロン`
+                        };
+                    }
+                }
+            }
+        }
+
+        // ============ チップパターン ============
+        if (this.state.chipEnabled) {
+            const chipPatterns = [
+                /(.+?)から(.+?)[へに][\s]*(?:チップ|ちっぷ|祝儀|しゅうぎ)[\s]*(\d+)[\s]*(?:枚|まい)/,
+                /(.+?)から(.+?)[へに][\s]*(\d+)[\s]*(?:枚|まい)[\s]*(?:チップ|ちっぷ|祝儀|しゅうぎ)/,
+                /(.+?)から(.+?)[へに][\s]*(\d+)[\s]*(?:チップ|ちっぷ)/,
+            ];
+            for (const pat of chipPatterns) {
+                const m = t.match(pat);
+                if (m) {
+                    const from = findPlayer(m[1]);
+                    const to = findPlayer(m[2]);
+                    const count = parseInt(m[3]);
+                    if (from >= 0 && to >= 0 && from !== to && count > 0) {
+                        return {
+                            type: 'chip', fromIdx: from, toIdx: to, count: count,
+                            description: `${this.state.players[from]}→${this.state.players[to]} チップ${count}枚`
+                        };
+                    }
+                }
+            }
+        }
+
+        // ============ 最終フォールバック: 数字のみ抽出 ============
+        // 2つの数字 + ツモっぽい言葉があれば候補として提示
+        const numbersInText = t.match(/\d+/g);
+        if (numbersInText && numbersInText.length >= 2 && /ツモ|つも/.test(t)) {
+            const ko = parseInt(numbersInText[0]);
+            const oya = parseInt(numbersInText[1]);
+            if (ko > 0 && oya > 0) {
+                // プレイヤー名探し
+                const cleaned = t.replace(/\d+/g, '').replace(/ツモ|つも|が|の|は/g, '');
+                const winner = findPlayer(cleaned);
+                if (winner >= 0) {
+                    return {
+                        type: 'tsumo', winnerIdx: winner, koScore: ko, oyaScore: oya,
+                        description: `${this.state.players[winner]} ${ko.toLocaleString()}/${oya.toLocaleString()} ツモ`
+                    };
+                }
             }
         }
 
