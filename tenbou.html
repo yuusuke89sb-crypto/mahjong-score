@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="麻雀点棒授受管理アプリ - 音声認識対応">
+    <meta name="theme-color" content="#0f172a">
+    <title>🀄 点棒管理</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;900&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="tenbou.css">
+</head>
+
+<body>
+    <div class="container">
+
+        <!-- ヘッダー -->
+        <header class="app-header">
+            <button id="theme-toggle" class="theme-toggle" title="テーマ切替">🌙</button>
+            <h1>🀄 点棒管理</h1>
+            <p>音声認識で簡単点棒授受</p>
+            <a href="index.html" class="btn-back-link" title="計算ツールへ">📐 計算</a>
+        </header>
+
+        <!-- ========== セットアップ画面 ========== -->
+        <div id="setup-screen" class="screen">
+            <div class="card">
+                <h2 class="card-title">⚙️ 対局設定</h2>
+
+                <!-- プレイヤー名 -->
+                <div class="form-group">
+                    <label class="form-label">プレイヤー名</label>
+                    <div class="grid grid-4">
+                        <div class="player-name-setup">
+                            <span class="wind-badge east">東</span>
+                            <input type="text" id="setup-name-0" class="form-input" placeholder="プレイヤー1">
+                        </div>
+                        <div class="player-name-setup">
+                            <span class="wind-badge south">南</span>
+                            <input type="text" id="setup-name-1" class="form-input" placeholder="プレイヤー2">
+                        </div>
+                        <div class="player-name-setup">
+                            <span class="wind-badge west">西</span>
+                            <input type="text" id="setup-name-2" class="form-input" placeholder="プレイヤー3">
+                        </div>
+                        <div class="player-name-setup">
+                            <span class="wind-badge north">北</span>
+                            <input type="text" id="setup-name-3" class="form-input" placeholder="プレイヤー4">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 持ち点設定 -->
+                <div class="form-group">
+                    <label class="form-label">持ち点・返し点</label>
+                    <div class="grid grid-2">
+                        <div>
+                            <label class="form-label-sub">持ち点</label>
+                            <input type="number" id="setup-starting-points" class="form-input" value="25000"
+                                step="1000">
+                        </div>
+                        <div>
+                            <label class="form-label-sub">返し点</label>
+                            <input type="number" id="setup-return-points" class="form-input" value="30000" step="1000">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ウマ設定 -->
+                <div class="form-group">
+                    <label class="form-label">ウマ（1位〜4位）</label>
+                    <div class="grid grid-4">
+                        <input type="number" id="setup-uma-1" class="form-input" value="30" placeholder="1位">
+                        <input type="number" id="setup-uma-2" class="form-input" value="10" placeholder="2位">
+                        <input type="number" id="setup-uma-3" class="form-input" value="-10" placeholder="3位">
+                        <input type="number" id="setup-uma-4" class="form-input" value="-30" placeholder="4位">
+                    </div>
+                </div>
+
+                <!-- オカ設定 -->
+                <div class="form-group">
+                    <label class="form-label">オカ（1位ボーナス）</label>
+                    <input type="number" id="setup-oka" class="form-input" value="20" style="max-width: 200px;">
+                    <p class="form-hint">※ 持ち点25000・返し点30000の場合、オカ=20（(30000-25000)×4÷1000）</p>
+                </div>
+
+                <!-- チップ設定 -->
+                <div class="form-group">
+                    <label class="form-label">チップ（祝儀）</label>
+                    <div class="chip-toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="setup-chip-enabled" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-label">チップあり</span>
+                    </div>
+                    <div id="chip-settings" class="chip-settings">
+                        <div class="grid grid-2" style="max-width: 400px;">
+                            <div>
+                                <label class="form-label-sub">初期枚数</label>
+                                <input type="number" id="setup-chip-count" class="form-input" value="20" min="0">
+                            </div>
+                            <div>
+                                <label class="form-label-sub">1枚あたり（点）</label>
+                                <input type="number" id="setup-chip-value" class="form-input" value="500" step="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="start-game-btn" class="btn btn-primary btn-block btn-lg mt-lg">
+                    🀄 対局開始
+                </button>
+            </div>
+        </div>
+
+        <!-- ========== メイン対局画面 ========== -->
+        <div id="game-screen" class="screen hidden">
+
+            <!-- プレイヤーカード -->
+            <div class="player-grid" id="player-grid">
+                <!-- JSで動的生成 -->
+            </div>
+
+            <!-- 本場・供託表示 -->
+            <div class="game-info-bar">
+                <div class="info-item">
+                    <span class="info-label">本場</span>
+                    <div class="stepper-compact">
+                        <button class="stepper-btn-sm" onclick="Tenbou.changeHonba(-1)">−</button>
+                        <span id="honba-display">0</span>
+                        <button class="stepper-btn-sm" onclick="Tenbou.changeHonba(1)">＋</button>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">供託</span>
+                    <div class="stepper-compact">
+                        <button class="stepper-btn-sm" onclick="Tenbou.changeKyoutaku(-1000)">−</button>
+                        <span id="kyoutaku-display">0</span>
+                        <button class="stepper-btn-sm" onclick="Tenbou.changeKyoutaku(1000)">＋</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作ボタン -->
+            <div class="action-buttons">
+                <button id="voice-btn" class="btn btn-voice" onclick="Tenbou.startVoice()">
+                    <span class="voice-icon">🎤</span>
+                    <span>音声入力</span>
+                </button>
+                <button class="btn btn-manual" onclick="Tenbou.showManualInput('tsumo')">
+                    <span>✋ ツモ</span>
+                </button>
+                <button class="btn btn-manual" onclick="Tenbou.showManualInput('ron')">
+                    <span>👊 ロン</span>
+                </button>
+                <button id="chip-action-btn" class="btn btn-chip" onclick="Tenbou.showManualInput('chip')">
+                    <span>🎰 チップ</span>
+                </button>
+            </div>
+
+            <!-- 音声認識ステータス -->
+            <div id="voice-status" class="voice-status hidden">
+                <div class="voice-pulse"></div>
+                <p id="voice-text" class="voice-text">聴いています...</p>
+                <button class="btn btn-sm btn-secondary" onclick="Tenbou.stopVoice()">キャンセル</button>
+            </div>
+
+            <!-- 音声認識結果プレビュー -->
+            <div id="voice-preview" class="voice-preview hidden">
+                <div class="card">
+                    <h3>認識結果</h3>
+                    <p id="voice-preview-text" class="preview-text"></p>
+                    <div class="preview-actions">
+                        <button class="btn btn-primary" onclick="Tenbou.confirmVoice()">✓ 確定</button>
+                        <button class="btn btn-secondary" onclick="Tenbou.cancelVoice()">✕ やり直し</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 手動入力パネル -->
+            <div id="manual-panel" class="manual-panel hidden">
+                <div class="card">
+                    <h3 id="manual-title" class="card-title">ツモ入力</h3>
+
+                    <!-- ツモ入力 -->
+                    <div id="manual-tsumo" class="manual-section hidden">
+                        <div class="form-group">
+                            <label class="form-label">和了者</label>
+                            <div class="player-select" id="tsumo-winner-select"></div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">点数</label>
+                            <div class="grid grid-2">
+                                <div>
+                                    <label class="form-label-sub">子の支払い</label>
+                                    <input type="number" id="tsumo-ko" class="form-input" placeholder="例: 2000"
+                                        step="100">
+                                </div>
+                                <div>
+                                    <label class="form-label-sub">親の支払い</label>
+                                    <input type="number" id="tsumo-oya" class="form-input" placeholder="例: 4000"
+                                        step="100">
+                                </div>
+                            </div>
+                            <p class="form-hint">※ 親のツモの場合は「子の支払い」のみ入力（＝オール）</p>
+                        </div>
+                    </div>
+
+                    <!-- ロン入力 -->
+                    <div id="manual-ron" class="manual-section hidden">
+                        <div class="form-group">
+                            <label class="form-label">和了者</label>
+                            <div class="player-select" id="ron-winner-select"></div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">放銃者</label>
+                            <div class="player-select" id="ron-loser-select"></div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">点数</label>
+                            <input type="number" id="ron-score" class="form-input" placeholder="例: 3900" step="100">
+                        </div>
+                    </div>
+
+                    <!-- チップ入力 -->
+                    <div id="manual-chip" class="manual-section hidden">
+                        <div class="form-group">
+                            <label class="form-label">渡す人</label>
+                            <div class="player-select" id="chip-from-select"></div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">受け取る人</label>
+                            <div class="player-select" id="chip-to-select"></div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">枚数</label>
+                            <input type="number" id="chip-count" class="form-input" value="1" min="1"
+                                style="max-width: 120px;">
+                        </div>
+                    </div>
+
+                    <div class="manual-actions">
+                        <button class="btn btn-primary" onclick="Tenbou.submitManual()">確定</button>
+                        <button class="btn btn-secondary" onclick="Tenbou.hideManualInput()">キャンセル</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 取引履歴 -->
+            <div class="history-section">
+                <h3 class="section-title">📝 取引履歴</h3>
+                <div id="history-list" class="history-list">
+                    <p class="history-empty">まだ取引がありません</p>
+                </div>
+            </div>
+
+            <!-- 下部ボタン -->
+            <div class="bottom-actions">
+                <button class="btn btn-secondary" onclick="Tenbou.undoLast()">↩️ 取消</button>
+                <button class="btn btn-secondary" onclick="Tenbou.showResult()">📊 精算</button>
+                <button class="btn btn-danger-outline" onclick="Tenbou.resetGame()">🔄 リセット</button>
+            </div>
+        </div>
+
+        <!-- ========== 精算画面 ========== -->
+        <div id="result-screen" class="screen hidden">
+            <div class="card">
+                <h2 class="card-title">📊 精算結果</h2>
+                <div id="result-container"></div>
+                <div class="result-actions">
+                    <button class="btn btn-share" onclick="Tenbou.copyResult()">📋 コピー</button>
+                    <button class="btn btn-share btn-line" onclick="Tenbou.shareToLINE()">💬 LINE共有</button>
+                </div>
+                <button class="btn btn-secondary btn-block mt-lg" onclick="Tenbou.backToGame()">← 対局に戻る</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- フッター -->
+    <footer
+        style="text-align: center; padding: 16px; color: var(--color-text-secondary); font-size: var(--font-size-xs); margin-top: 8px;">
+        製作者：吉村　悠佑
+    </footer>
+
+    <script src="tenbou.js"></script>
+</body>
+
+</html>
