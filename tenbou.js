@@ -665,8 +665,10 @@ const Tenbou = {
         // 前処理: 漢数字→算用数字、正規化
         let t = this.kanjiToNumber(text);
         // よくある誤認識の修正
-        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'つも');
-        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン');
+        t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ');
+        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
+        t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
+        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン').replace(/ローン/g, 'ロン');
         t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール');
         // スペースを正規化（複数→1つ）し、前後をトリム
         t = t.replace(/\s+/g, ' ').trim();
