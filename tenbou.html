@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="麻雀点棒授受管理アプリ - 音声認識対応">
+    <meta name="description" content="麻雀点棒授受管理アプリ">
     <meta name="theme-color" content="#0f172a">
     <title>🀄 点棒管理</title>
 
@@ -26,7 +26,7 @@
         <header class="app-header">
             <button id="theme-toggle" class="theme-toggle" title="テーマ切替">🌙</button>
             <h1>🀄 点棒管理</h1>
-            <p>音声認識で簡単点棒授受</p>
+            <p>簡単点棒授受＆統計</p>
             <a href="index.html" class="btn-back-link" title="計算ツールへ">📐 計算</a>
         </header>
 
@@ -34,6 +34,20 @@
         <div id="setup-screen" class="screen">
             <div class="card">
                 <h2 class="card-title">⚙️ 対局設定</h2>
+
+                <!-- ゲーム種別 -->
+                <div class="form-group">
+                    <label class="form-label">ゲーム種別</label>
+                    <div class="game-type-selector">
+                        <button class="game-type-btn active" data-type="hanchan"
+                            onclick="Tenbou.selectGameType('hanchan', this)">
+                            🀄 東南戦（半荘）
+                        </button>
+                        <button class="game-type-btn" data-type="tonpu" onclick="Tenbou.selectGameType('tonpu', this)">
+                            🌬️ 東風戦
+                        </button>
+                    </div>
+                </div>
 
                 <!-- プレイヤー名 -->
                 <div class="form-group">
@@ -92,6 +106,27 @@
                     <p class="form-hint">※ 持ち点25000・返し点30000の場合、オカ=20（(30000-25000)×4÷1000）</p>
                 </div>
 
+                <!-- ルール設定 -->
+                <div class="form-group">
+                    <label class="form-label">ルール設定</label>
+                    <div class="rule-toggles">
+                        <div class="chip-toggle-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setup-tenpai-renchan" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="toggle-label" id="tenpai-renchan-label">テンパイ連荘あり</span>
+                        </div>
+                        <div class="chip-toggle-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="setup-agari-yame">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="toggle-label" id="agari-yame-label">上がり止めなし</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- チップ設定 -->
                 <div class="form-group">
                     <label class="form-label">チップ（祝儀）</label>
@@ -125,6 +160,12 @@
         <!-- ========== メイン対局画面 ========== -->
         <div id="game-screen" class="screen hidden">
 
+            <!-- 局表示バー -->
+            <div class="round-display" id="round-display">
+                <span class="round-name" id="round-name">東1局</span>
+                <span class="round-honba" id="round-honba">0本場</span>
+            </div>
+
             <!-- プレイヤーカード -->
             <div class="player-grid" id="player-grid">
                 <!-- JSで動的生成 -->
@@ -152,10 +193,6 @@
 
             <!-- 操作ボタン -->
             <div class="action-buttons">
-                <button id="voice-btn" class="btn btn-voice" onclick="Tenbou.startVoice()">
-                    <span class="voice-icon">🎤</span>
-                    <span>音声入力</span>
-                </button>
                 <button class="btn btn-manual" onclick="Tenbou.showManualInput('tsumo')">
                     <span>✋ ツモ</span>
                 </button>
@@ -166,7 +203,7 @@
                     style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff">
                     <span>🔴 立直</span>
                 </button>
-                <button class="btn btn-manual" onclick="Tenbou.processRyukyoku()"
+                <button id="ryukyoku-btn" class="btn btn-manual" onclick="Tenbou.handleRyukyoku()"
                     style="background:var(--color-bg-hover)">
                     <span>💨 流局</span>
                 </button>
@@ -176,7 +213,7 @@
             </div>
 
             <!-- 立直プレイヤー選択 -->
-            <div id="riichi-select" class="voice-preview hidden">
+            <div id="riichi-select" class="popup-panel hidden">
                 <div class="card">
                     <h3>🔴 立直宣言</h3>
                     <p style="margin-bottom:12px;color:var(--color-text-secondary)">立直するプレイヤーを選択（-1000点供託）</p>
@@ -184,23 +221,14 @@
                 </div>
             </div>
 
-            <!-- 音声認識ステータス -->
-            <div id="voice-status" class="voice-status hidden">
-                <div class="voice-pulse"></div>
-                <p id="voice-text" class="voice-text">🎤 聴いています...</p>
-                <p style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin:4px 0">
-                    例:「2000の4000ツモ」「3900ロン」</p>
-                <button class="btn btn-sm btn-secondary" onclick="Tenbou.stopVoice()">キャンセル</button>
-            </div>
-
-            <!-- 音声認識結果プレビュー -->
-            <div id="voice-preview" class="voice-preview hidden">
+            <!-- 流局テンパイ確認 -->
+            <div id="ryukyoku-select" class="popup-panel hidden">
                 <div class="card">
-                    <h3>認識結果</h3>
-                    <p id="voice-preview-text" class="preview-text"></p>
-                    <div class="preview-actions">
-                        <button class="btn btn-primary" onclick="Tenbou.confirmVoice()">✓ 確定</button>
-                        <button class="btn btn-secondary" onclick="Tenbou.cancelVoice()">✕ やり直し</button>
+                    <h3>💨 流局</h3>
+                    <p style="margin-bottom:12px;color:var(--color-text-secondary)">親はテンパイですか？</p>
+                    <div class="grid grid-2">
+                        <button class="btn btn-primary" onclick="Tenbou.processRyukyoku(true)">親テンパイ（連荘）</button>
+                        <button class="btn btn-secondary" onclick="Tenbou.processRyukyoku(false)">親ノーテン（親流れ）</button>
                     </div>
                 </div>
             </div>
@@ -295,6 +323,7 @@
             <div class="bottom-actions">
                 <button class="btn btn-secondary" onclick="Tenbou.undoLast()">↩️ 取消</button>
                 <button class="btn btn-secondary" onclick="Tenbou.showResult()">📊 精算</button>
+                <button class="btn btn-secondary" onclick="Tenbou.showStats()">📈 統計</button>
                 <button class="btn btn-danger-outline" onclick="Tenbou.resetGame()">🔄 リセット</button>
             </div>
         </div>
@@ -308,6 +337,33 @@
                     <button class="btn btn-share" onclick="Tenbou.copyResult()">📋 コピー</button>
                     <button class="btn btn-share btn-line" onclick="Tenbou.shareToLINE()">💬 LINE共有</button>
                 </div>
+                <div class="grid grid-2 mt-lg" id="result-bottom-actions">
+                    <button class="btn btn-secondary" onclick="Tenbou.backToGame()">← 対局に戻る</button>
+                    <button class="btn btn-primary" onclick="Tenbou.startNextHanchan()">🀄 次の半荘へ</button>
+                </div>
+                <button class="btn btn-danger-outline btn-block mt-lg" onclick="Tenbou.endSession()">🏁 本日の対局終了</button>
+            </div>
+        </div>
+
+        <!-- ========== セッション終了画面 ========== -->
+        <div id="session-end-screen" class="screen hidden">
+            <div class="card">
+                <h2 class="card-title">🏁 本日の対局結果</h2>
+                <div id="session-end-container"></div>
+                <div class="result-actions">
+                    <button class="btn btn-share" onclick="Tenbou.copySessionResult()">📋 コピー</button>
+                    <button class="btn btn-share btn-line" onclick="Tenbou.shareSessionToLINE()">💬 LINE共有</button>
+                </div>
+                <button class="btn btn-primary btn-block mt-lg" onclick="Tenbou.resetGame()">🔄 新しいセッションを開始</button>
+            </div>
+        </div>
+
+        <!-- ========== 統計画面 ========== -->
+        <div id="stats-screen" class="screen hidden">
+            <div class="card">
+                <h2 class="card-title">📈 プレイヤー統計</h2>
+                <div id="stats-session-summary"></div>
+                <div id="stats-container"></div>
                 <button class="btn btn-secondary btn-block mt-lg" onclick="Tenbou.backToGame()">← 対局に戻る</button>
             </div>
         </div>
@@ -320,7 +376,7 @@
         製作者：吉村　悠佑
     </footer>
 
-    <script src="tenbou.js?v=11"></script>
+    <script src="tenbou.js?v=12"></script>
 </body>
 
 </html>

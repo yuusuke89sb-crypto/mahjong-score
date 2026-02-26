@@ -1,5 +1,5 @@
 /**
- * 点棒管理アプリ - メインロジック
+ * 点棒管理アプリ - メインロジック (局自動進行対応)
  */
 
 const Tenbou = {
@@ -18,26 +18,30 @@ const Tenbou = {
         chipEnabled: true,
         chipValue: 500,
         initialChips: 20,
-        history: [],      // { type, description, scoreDiffs, chipDiffs }
+        // Round progression
+        gameType: 'hanchan',   // 'tonpu' | 'hanchan'
+        currentRound: 0,       // 0=東1, 1=東2, ... 4=南1, ... 7=南4
+        tenpaiRenchan: true,
+        agariYame: false,
+        // History & session
+        history: [],
+        sessionGames: [],
         currentScreen: 'setup'
     },
 
     // Manual input state
-    manualMode: null,  // 'tsumo' | 'ron' | 'chip'
+    manualMode: null,
     selectedWinner: null,
     selectedLoser: null,
     selectedChipFrom: null,
     selectedChipTo: null,
-
-    // Voice
-    recognition: null,
-    pendingVoiceAction: null,
 
     // ===== Init =====
     init() {
         this.loadTheme();
         this.setupThemeToggle();
         this.setupChipToggle();
+        this.setupRuleToggles();
         this.setupInputAutoSelect();
         this.loadState();
     },
@@ -64,16 +68,32 @@ const Tenbou = {
         const settings = document.getElementById('chip-settings');
         toggle.addEventListener('change', () => {
             settings.classList.toggle('hidden', !toggle.checked);
-            document.querySelector('.toggle-label').textContent = toggle.checked ? 'チップあり' : 'チップなし';
+            toggle.closest('.chip-toggle-group').querySelector('.toggle-label').textContent = toggle.checked ? 'チップあり' : 'チップなし';
         });
-
         document.getElementById('start-game-btn').addEventListener('click', () => this.startGame());
+    },
+
+    setupRuleToggles() {
+        const tenpai = document.getElementById('setup-tenpai-renchan');
+        tenpai.addEventListener('change', () => {
+            document.getElementById('tenpai-renchan-label').textContent = tenpai.checked ? 'テンパイ連荘あり' : 'テンパイ連荘なし';
+        });
+        const agari = document.getElementById('setup-agari-yame');
+        agari.addEventListener('change', () => {
+            document.getElementById('agari-yame-label').textContent = agari.checked ? '上がり止めあり' : '上がり止めなし';
+        });
     },
 
     setupInputAutoSelect() {
         document.querySelectorAll('input[type="number"]').forEach(input => {
             input.addEventListener('focus', () => input.select());
         });
+    },
+
+    selectGameType(type, btn) {
+        document.querySelectorAll('.game-type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this._selectedGameType = type;
     },
 
     // ===== Screen Management =====
@@ -84,9 +104,31 @@ const Tenbou = {
         window.scrollTo(0, 0);
     },
 
+    // ===== Round Helpers =====
+    getRoundName(round) {
+        const winds = ['東', '南'];
+        const wind = winds[Math.floor(round / 4)];
+        const num = (round % 4) + 1;
+        return `${wind}${num}局`;
+    },
+
+    getMaxRound() {
+        return this.state.gameType === 'tonpu' ? 3 : 7;
+    },
+
+    isLastRound() {
+        return this.state.currentRound >= this.getMaxRound();
+    },
+
+    updateRoundDisplay() {
+        const nameEl = document.getElementById('round-name');
+        const honbaEl = document.getElementById('round-honba');
+        if (nameEl) nameEl.textContent = this.getRoundName(this.state.currentRound);
+        if (honbaEl) honbaEl.textContent = `${this.state.honba}本場`;
+    },
+
     // ===== Start Game =====
     startGame() {
-        // Collect setup
         for (let i = 0; i < 4; i++) {
             const val = document.getElementById(`setup-name-${i}`).value.trim();
             if (val) this.state.players[i] = val;
@@ -102,27 +144,32 @@ const Tenbou = {
         ];
         this.state.oka = parseFloat(document.getElementById('setup-oka').value) || 0;
 
+        this.state.gameType = this._selectedGameType || 'hanchan';
+        this.state.tenpaiRenchan = document.getElementById('setup-tenpai-renchan').checked;
+        this.state.agariYame = document.getElementById('setup-agari-yame').checked;
+
         this.state.chipEnabled = document.getElementById('setup-chip-enabled').checked;
         this.state.initialChips = parseInt(document.getElementById('setup-chip-count').value) || 20;
         this.state.chipValue = parseInt(document.getElementById('setup-chip-value').value) || 500;
 
-        // Init scores
         for (let i = 0; i < 4; i++) {
             this.state.scores[i] = this.state.startingPoints;
             this.state.chips[i] = this.state.chipEnabled ? this.state.initialChips : 0;
         }
+        this.state.currentRound = 0;
         this.state.dealerIndex = 0;
         this.state.honba = 0;
         this.state.kyoutaku = 0;
         this.state.history = [];
+        this.state.sessionGames = [];
 
-        // Show/hide chip button
         const chipBtn = document.getElementById('chip-action-btn');
         if (chipBtn) chipBtn.classList.toggle('hidden', !this.state.chipEnabled);
 
         this.showScreen('game');
         this.renderPlayers();
         this.renderHistory();
+        this.updateRoundDisplay();
         this.saveState();
     },
 
@@ -156,13 +203,12 @@ const Tenbou = {
         ${chipHtml}
         <div class="player-diff ${diffClass}">${diffText}</div>
       `;
-
             grid.appendChild(card);
         }
 
-        // Update info bar
         document.getElementById('honba-display').textContent = this.state.honba;
         document.getElementById('kyoutaku-display').textContent = this.state.kyoutaku.toLocaleString();
+        this.updateRoundDisplay();
     },
 
     renderHistory() {
@@ -171,30 +217,23 @@ const Tenbou = {
             list.innerHTML = '<p class="history-empty">まだ取引がありません</p>';
             return;
         }
-
         list.innerHTML = '';
-        // Show newest first
         for (let i = this.state.history.length - 1; i >= 0; i--) {
             const h = this.state.history[i];
             const entry = document.createElement('div');
             entry.className = 'history-entry';
-
             const typeClass = h.type === 'tsumo' ? 'type-tsumo' : h.type === 'ron' ? 'type-ron' : 'type-chip';
-            const typeLabel = h.type === 'tsumo' ? 'ツモ' : h.type === 'ron' ? 'ロン' : 'チップ';
-
+            const typeLabel = h.type === 'tsumo' ? 'ツモ' : h.type === 'ron' ? 'ロン' : h.type === 'ryukyoku' ? '流局' : 'チップ';
             entry.innerHTML = `
         <div class="history-entry-text">
           <span class="history-entry-type ${typeClass}">${typeLabel}</span>
           ${h.description}
-        </div>
-      `;
+        </div>`;
             list.appendChild(entry);
         }
     },
 
-    // ===== Player Card Click =====
     onPlayerCardClick(index) {
-        // Toggle dealer on long press or simple click cycles dealer
         this.state.dealerIndex = index;
         this.renderPlayers();
         this.saveState();
@@ -204,12 +243,70 @@ const Tenbou = {
     changeHonba(delta) {
         this.state.honba = Math.max(0, this.state.honba + delta);
         document.getElementById('honba-display').textContent = this.state.honba;
+        this.updateRoundDisplay();
         this.saveState();
     },
 
     changeKyoutaku(delta) {
         this.state.kyoutaku = Math.max(0, this.state.kyoutaku + delta);
         document.getElementById('kyoutaku-display').textContent = this.state.kyoutaku.toLocaleString();
+        this.saveState();
+    },
+
+    // ===== Round Advancement =====
+    advanceRound(dealerWon) {
+        if (dealerWon) {
+            // 親の和了 → 連荘
+            this.state.honba++;
+
+            // 上がり止めチェック（最終局 + 上がり止めON）
+            if (this.isLastRound() && this.state.agariYame) {
+                setTimeout(() => {
+                    if (confirm(`${this.getRoundName(this.state.currentRound)} ${this.state.honba}本場\n\n親の和了です。上がり止めしますか？`)) {
+                        this.showResult();
+                        this._gameEnded = true;
+                    }
+                }, 300);
+            }
+        } else {
+            // 子の和了 → 次局へ
+            this.state.honba = 0;
+            this.state.currentRound++;
+            this.state.dealerIndex = this.state.currentRound % 4;
+
+            // 終局チェック
+            if (this.state.currentRound > this.getMaxRound()) {
+                setTimeout(() => {
+                    this.showResult();
+                    this._gameEnded = true;
+                }, 300);
+                return;
+            }
+        }
+
+        this.renderPlayers();
+        this.saveState();
+    },
+
+    advanceRoundRyukyoku(dealerTenpai) {
+        this.state.honba++;
+
+        if (!dealerTenpai) {
+            // 親ノーテン → 次局へ
+            this.state.currentRound++;
+            this.state.dealerIndex = this.state.currentRound % 4;
+
+            if (this.state.currentRound > this.getMaxRound()) {
+                setTimeout(() => {
+                    this.showResult();
+                    this._gameEnded = true;
+                }, 300);
+                return;
+            }
+        }
+        // 親テンパイ → 連荘（局は進まない）
+
+        this.renderPlayers();
         this.saveState();
     },
 
@@ -220,7 +317,6 @@ const Tenbou = {
         const isDealer = winnerIdx === this.state.dealerIndex;
 
         if (isDealer) {
-            // 親ツモ: 全員から koScore (= オール)
             for (let i = 0; i < 4; i++) {
                 if (i === winnerIdx) continue;
                 const payment = koScore + honbaBonus;
@@ -228,7 +324,6 @@ const Tenbou = {
                 scoreDiffs[winnerIdx] += payment;
             }
         } else {
-            // 子ツモ
             for (let i = 0; i < 4; i++) {
                 if (i === winnerIdx) continue;
                 const isOya = (i === this.state.dealerIndex);
@@ -238,26 +333,28 @@ const Tenbou = {
             }
         }
 
-        // Add kyoutaku
         scoreDiffs[winnerIdx] += this.state.kyoutaku;
 
-        // Apply
         for (let i = 0; i < 4; i++) {
             this.state.scores[i] += scoreDiffs[i];
         }
 
-        // Build description
         const winner = this.state.players[winnerIdx];
-        let desc;
+        let desc = `【${this.getRoundName(this.state.currentRound)}】`;
         if (isDealer) {
-            desc = `${winner} ${koScore.toLocaleString()}オール ツモ`;
+            desc += `${winner} ${koScore.toLocaleString()}オール ツモ`;
         } else {
-            desc = `${winner} ${koScore.toLocaleString()}/${oyaScore.toLocaleString()} ツモ`;
+            desc += `${winner} ${koScore.toLocaleString()}/${oyaScore.toLocaleString()} ツモ`;
         }
         if (this.state.honba > 0) desc += ` (${this.state.honba}本場)`;
         if (this.state.kyoutaku > 0) desc += ` +供託${this.state.kyoutaku.toLocaleString()}`;
 
-        const entry = { type: 'tsumo', description: desc, scoreDiffs, chipDiffs: [0, 0, 0, 0], prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba };
+        const entry = {
+            type: 'tsumo', description: desc, scoreDiffs,
+            chipDiffs: [0, 0, 0, 0],
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
+        };
 
         this.state.history.push(entry);
         this.state.kyoutaku = 0;
@@ -266,6 +363,10 @@ const Tenbou = {
         this.renderHistory();
         this.saveState();
         if (navigator.vibrate) navigator.vibrate(50);
+
+        // 局進行
+        this._gameEnded = false;
+        this.advanceRound(isDealer);
     },
 
     // ===== Process Ron =====
@@ -283,11 +384,19 @@ const Tenbou = {
 
         const winner = this.state.players[winnerIdx];
         const loser = this.state.players[loserIdx];
-        let desc = `${loser}→${winner} ${score.toLocaleString()}点 ロン`;
+        let desc = `【${this.getRoundName(this.state.currentRound)}】`;
+        desc += `${loser}→${winner} ${score.toLocaleString()}点 ロン`;
         if (this.state.honba > 0) desc += ` (${this.state.honba}本場 +${honbaBonus.toLocaleString()})`;
         if (this.state.kyoutaku > 0) desc += ` +供託${this.state.kyoutaku.toLocaleString()}`;
 
-        const entry = { type: 'ron', description: desc, scoreDiffs, chipDiffs: [0, 0, 0, 0], prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba };
+        const isDealer = winnerIdx === this.state.dealerIndex;
+
+        const entry = {
+            type: 'ron', description: desc, scoreDiffs,
+            chipDiffs: [0, 0, 0, 0],
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
+        };
 
         this.state.history.push(entry);
         this.state.kyoutaku = 0;
@@ -296,6 +405,10 @@ const Tenbou = {
         this.renderHistory();
         this.saveState();
         if (navigator.vibrate) navigator.vibrate(50);
+
+        // 局進行
+        this._gameEnded = false;
+        this.advanceRound(isDealer);
     },
 
     // ===== Process Chip =====
@@ -303,7 +416,6 @@ const Tenbou = {
         const chipDiffs = [0, 0, 0, 0];
         chipDiffs[fromIdx] = -count;
         chipDiffs[toIdx] = count;
-
         this.state.chips[fromIdx] -= count;
         this.state.chips[toIdx] += count;
 
@@ -311,7 +423,12 @@ const Tenbou = {
         const to = this.state.players[toIdx];
         const desc = `${from}→${to} チップ${count}枚`;
 
-        const entry = { type: 'chip', description: desc, scoreDiffs: [0, 0, 0, 0], chipDiffs, prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba };
+        const entry = {
+            type: 'chip', description: desc,
+            scoreDiffs: [0, 0, 0, 0], chipDiffs,
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
+        };
         this.state.history.push(entry);
 
         this.renderPlayers();
@@ -320,7 +437,6 @@ const Tenbou = {
         if (navigator.vibrate) navigator.vibrate(50);
     },
 
-    // ===== Process Tsumo Chips (全員からチップ受取) =====
     processTsumoChips(winnerIdx, countPerPerson) {
         const chipDiffs = [0, 0, 0, 0];
         for (let i = 0; i < 4; i++) {
@@ -338,7 +454,8 @@ const Tenbou = {
         const entry = {
             type: 'tsumo-chip', description: desc,
             scoreDiffs: [0, 0, 0, 0], chipDiffs,
-            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
         };
         this.state.history.push(entry);
 
@@ -347,25 +464,47 @@ const Tenbou = {
         this.saveState();
     },
 
-    // ===== Process Ryukyoku (Draw) =====
-    processRyukyoku() {
-        const desc = `流局 (${this.state.honba}本場)`;
+    // ===== Process Ryukyoku =====
+    handleRyukyoku() {
+        if (this.state.tenpaiRenchan) {
+            // テンパイ連荘あり → 親テンパイか確認
+            document.getElementById('ryukyoku-select').classList.remove('hidden');
+        } else {
+            // テンパイ連荘なし → 常に親流れ
+            this.processRyukyoku(false);
+        }
+    },
+
+    processRyukyoku(dealerTenpai) {
+        document.getElementById('ryukyoku-select').classList.add('hidden');
+
+        const desc = `【${this.getRoundName(this.state.currentRound)}】流局 (${this.state.honba}本場)` +
+            (this.state.tenpaiRenchan ? (dealerTenpai ? ' 親テンパイ' : ' 親ノーテン') : '');
+
         const entry = {
             type: 'ryukyoku', description: desc,
             scoreDiffs: [0, 0, 0, 0], chipDiffs: [0, 0, 0, 0],
-            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
         };
         this.state.history.push(entry);
-        this.state.honba++;
-        // 供託はそのまま維持（立直棒が乗る）
 
         this.renderPlayers();
         this.renderHistory();
         this.saveState();
         if (navigator.vibrate) navigator.vibrate(50);
+
+        // 局進行
+        this._gameEnded = false;
+        if (this.state.tenpaiRenchan) {
+            this.advanceRoundRyukyoku(dealerTenpai);
+        } else {
+            // テンパイ連荘なし: 常に次局に進む
+            this.advanceRoundRyukyoku(false);
+        }
     },
 
-    // ===== Process Riichi =====
+    // ===== Riichi =====
     showRiichiSelect() {
         const panel = document.getElementById('riichi-select');
         panel.classList.remove('hidden');
@@ -386,7 +525,6 @@ const Tenbou = {
     processRiichi(playerIdx) {
         const scoreDiffs = [0, 0, 0, 0];
         scoreDiffs[playerIdx] = -1000;
-
         this.state.scores[playerIdx] -= 1000;
         this.state.kyoutaku += 1000;
 
@@ -396,8 +534,8 @@ const Tenbou = {
         const entry = {
             type: 'riichi', description: desc, scoreDiffs,
             chipDiffs: [0, 0, 0, 0],
-            prevKyoutaku: this.state.kyoutaku - 1000,
-            prevHonba: this.state.honba
+            prevKyoutaku: this.state.kyoutaku - 1000, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
         };
         this.state.history.push(entry);
 
@@ -416,15 +554,17 @@ const Tenbou = {
 
         const last = this.state.history.pop();
 
-        // Reverse score changes
         for (let i = 0; i < 4; i++) {
             this.state.scores[i] -= last.scoreDiffs[i];
             this.state.chips[i] -= last.chipDiffs[i];
         }
 
-        // Restore kyoutaku and honba
         if (last.prevKyoutaku !== undefined) this.state.kyoutaku = last.prevKyoutaku;
         if (last.prevHonba !== undefined) this.state.honba = last.prevHonba;
+        if (last.prevRound !== undefined) this.state.currentRound = last.prevRound;
+        if (last.prevDealerIndex !== undefined) this.state.dealerIndex = last.prevDealerIndex;
+
+        this._gameEnded = false;
 
         this.renderPlayers();
         this.renderHistory();
@@ -439,7 +579,6 @@ const Tenbou = {
         this.selectedChipFrom = null;
         this.selectedChipTo = null;
 
-        // Hide all sections
         document.querySelectorAll('.manual-section').forEach(s => s.classList.add('hidden'));
         document.getElementById('manual-panel').classList.remove('hidden');
 
@@ -451,7 +590,6 @@ const Tenbou = {
             this.renderPlayerSelect('tsumo-winner-select', (idx) => { this.selectedWinner = idx; });
             document.getElementById('tsumo-ko').value = '';
             document.getElementById('tsumo-oya').value = '';
-            // チップ欄の表示/非表示
             const chipSection = document.getElementById('tsumo-chip-section');
             if (chipSection) {
                 chipSection.style.display = this.state.chipEnabled ? '' : 'none';
@@ -480,7 +618,6 @@ const Tenbou = {
     renderPlayerSelect(containerId, onSelect) {
         const container = document.getElementById(containerId);
         container.innerHTML = '';
-
         for (let i = 0; i < 4; i++) {
             const btn = document.createElement('button');
             btn.className = 'player-select-btn';
@@ -500,7 +637,6 @@ const Tenbou = {
             if (this.selectedWinner === null) { alert('和了者を選択してください'); return; }
             const ko = parseInt(document.getElementById('tsumo-ko').value) || 0;
             const oya = parseInt(document.getElementById('tsumo-oya').value) || 0;
-
             if (ko <= 0) { alert('子の支払いを入力してください'); return; }
 
             const isDealer = this.selectedWinner === this.state.dealerIndex;
@@ -508,20 +644,15 @@ const Tenbou = {
 
             this.processTsumo(this.selectedWinner, ko, oyaScore);
 
-            // ツモ時チップ処理（3人から受け取る）
             if (this.state.chipEnabled) {
                 const chipCount = parseInt(document.getElementById('tsumo-chip-count').value) || 0;
-                if (chipCount > 0) {
-                    this.processTsumoChips(this.selectedWinner, chipCount);
-                }
+                if (chipCount > 0) this.processTsumoChips(this.selectedWinner, chipCount);
             }
-
             this.hideManualInput();
         } else if (this.manualMode === 'ron') {
             if (this.selectedWinner === null) { alert('和了者を選択してください'); return; }
             if (this.selectedLoser === null) { alert('放銃者を選択してください'); return; }
             if (this.selectedWinner === this.selectedLoser) { alert('和了者と放銃者は異なる必要があります'); return; }
-
             const score = parseInt(document.getElementById('ron-score').value) || 0;
             if (score <= 0) { alert('点数を入力してください'); return; }
 
@@ -531,7 +662,6 @@ const Tenbou = {
             if (this.selectedChipFrom === null) { alert('渡す人を選択してください'); return; }
             if (this.selectedChipTo === null) { alert('受け取る人を選択してください'); return; }
             if (this.selectedChipFrom === this.selectedChipTo) { alert('渡す人と受け取る人は異なる必要があります'); return; }
-
             const count = parseInt(document.getElementById('chip-count').value) || 0;
             if (count <= 0) { alert('枚数を入力してください'); return; }
 
@@ -540,731 +670,219 @@ const Tenbou = {
         }
     },
 
-    // ===== Voice Recognition =====
-
-    // 音声テキストの共通正規化（誤認識修正）
-    normalizeVoiceText(text) {
-        let t = text;
-        // 全角数字→半角
-        t = t.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-        // ツモ系の誤認識
-        t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ').replace(/ツボ/g, 'ツモ');
-        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
-        t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
-        t = t.replace(/つもり/g, 'ツモ').replace(/ツモり/g, 'ツモ');
-        // ロン系の誤認識
-        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン').replace(/ローン/g, 'ロン');
-        t = t.replace(/ロング/g, 'ロン').replace(/ろんぐ/g, 'ロン');
-        // オール系
-        t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール').replace(/ALL/gi, 'オール');
-        // プレイヤー名 (A/B/C/D + 助詞) の誤認識
-        t = t.replace(/映画/g, 'Aが').replace(/エイガ/g, 'Aが').replace(/えいが/g, 'Aが');
-        t = t.replace(/栄が/g, 'Aが').replace(/永が/g, 'Aが').replace(/英が/g, 'Aが');
-        t = t.replace(/美が/g, 'Bが').replace(/火が/g, 'Bが').replace(/日が/g, 'Bが').replace(/微が/g, 'Bが');
-        t = t.replace(/滋賀/g, 'Cが').replace(/シガ/g, 'Cが').replace(/しが/g, 'Cが').replace(/市が/g, 'Cが').replace(/志賀/g, 'Cが');
-        t = t.replace(/出が/g, 'Dが').replace(/ディーが/g, 'Dが').replace(/デイが/g, 'Dが').replace(/でが/g, 'Dが');
-        t = t.replace(/永から/g, 'Aから').replace(/栄から/g, 'Aから').replace(/英から/g, 'Aから');
-        t = t.replace(/死から/g, 'Cから').replace(/市から/g, 'Cから').replace(/しから/g, 'Cから');
-        return t;
-    },
-
-    startVoice() {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            alert('お使いのブラウザは音声認識に対応していません。\nChrome/Edge/Safariをお試しください。');
+    // ===== Session Management =====
+    startNextHanchan() {
+        if (!this.lastResults) {
+            this.showResult();
             return;
         }
+        this.saveCurrentGameToSession();
 
-        this.recognition = new SpeechRecognition();
-        this.recognition.lang = 'ja-JP';
-        this.recognition.continuous = false;
-        this.recognition.interimResults = true;
+        // 点数リセット、チップ持ち越し
+        for (let i = 0; i < 4; i++) {
+            this.state.scores[i] = this.state.startingPoints;
+        }
+        this.state.currentRound = 0;
+        this.state.dealerIndex = 0;
+        this.state.honba = 0;
+        this.state.kyoutaku = 0;
+        this.state.history = [];
+        this.lastResults = null;
+        this._gameEnded = false;
 
-        document.getElementById('voice-status').classList.remove('hidden');
-        document.getElementById('voice-text').textContent = '🎤 聴いています...';
-        document.getElementById('voice-btn').classList.add('listening');
-
-        this.recognition.onresult = (event) => {
-            const result = event.results[0];
-            const transcript = result[0].transcript;
-
-            // 途中結果も正規化して表示（坪→ツモ等をリアルタイム修正）
-            const normalized = this.normalizeVoiceText(transcript);
-
-            if (result.isFinal) {
-                console.log('音声認識確定:', transcript, '→ 正規化:', normalized);
-                this.handleVoiceResult(normalized);
-            } else {
-                document.getElementById('voice-text').textContent = `🎤 ${normalized}`;
-            }
-        };
-
-        this.recognition.onerror = (event) => {
-            console.error('音声認識エラー:', event.error);
-            const msg = {
-                'no-speech': '音声が検出されませんでした。もう一度お試しください。',
-                'audio-capture': 'マイクが見つかりません',
-                'not-allowed': 'マイクの使用が許可されていません。\n設定からマイクを許可してください。',
-                'network': 'ネットワークエラー。接続を確認してください。',
-                'aborted': '中断されました',
-            }[event.error] || `エラー: ${event.error}`;
-            document.getElementById('voice-text').textContent = `⚠️ ${msg}`;
-            setTimeout(() => this.stopVoice(), 2500);
-        };
-
-        this.recognition.onend = () => {
-            document.getElementById('voice-btn').classList.remove('listening');
-            if (!this.pendingVoiceAction && !this.pendingVoicePartial) {
-                document.getElementById('voice-status').classList.add('hidden');
-            }
-        };
-
-        this.recognition.start();
+        this.showScreen('game');
+        this.renderPlayers();
+        this.renderHistory();
+        this.updateRoundDisplay();
+        this.saveState();
+        if (navigator.vibrate) navigator.vibrate([50, 100, 50]);
     },
 
-    stopVoice() {
-        if (this.recognition) {
-            this.recognition.abort();
-        }
-        document.getElementById('voice-status').classList.add('hidden');
-        document.getElementById('voice-btn').classList.remove('listening');
-    },
+    saveCurrentGameToSession() {
+        if (!this.lastResults) return;
+        const lastId = this.state.sessionGames.length > 0 ? this.state.sessionGames[this.state.sessionGames.length - 1].id : null;
+        if (lastId && this._lastSavedResultId === lastId) return;
 
-
-    handleVoiceResult(text) {
-        document.getElementById('voice-status').classList.add('hidden');
-
-        // まず完全パースを試みる
-        const parsed = this.parseVoiceText(text);
-
-        if (parsed) {
-            // 完全認識成功 → 従来通り確認表示
-            this.pendingVoiceAction = parsed;
-            document.getElementById('voice-preview').classList.remove('hidden');
-            document.getElementById('voice-preview-text').innerHTML =
-                `<div style="margin-bottom:8px">認識:「${text}」</div>` +
-                `<div style="font-size:var(--font-size-xl);font-weight:700">→ ${parsed.description}</div>`;
-            return;
-        }
-
-        // 完全パース失敗 → 数字とアクションだけ抽出してプレイヤー選択UIを表示
-        const partial = this.parseVoicePartial(text);
-        if (partial) {
-            this.showVoicePlayerSelect(text, partial);
-            return;
-        }
-
-        // 何も認識できなかった
-        document.getElementById('voice-preview').classList.remove('hidden');
-        document.getElementById('voice-preview-text').innerHTML =
-            `<div style="margin-bottom:8px">認識:「${text}」</div>` +
-            `<div style="color:var(--color-warning)">⚠️ 認識できませんでした</div>` +
-            `<div style="font-size:var(--font-size-xs);color:var(--color-text-muted);margin-top:8px">` +
-            `例:「2000の4000ツモ」「3900ロン」</div>`;
-        this.pendingVoiceAction = null;
-    },
-
-    // 数字 + アクションタイプだけ抽出（プレイヤー名なし）
-    parseVoicePartial(text) {
-        let t = this.kanjiToNumber(text);
-        t = t.replace(/坪/g, 'ツモ').replace(/つぼ/g, 'ツモ');
-        t = t.replace(/スモ/g, 'ツモ').replace(/すも/g, 'ツモ');
-        t = t.replace(/詰も/g, 'ツモ').replace(/積も/g, 'ツモ').replace(/摘も/g, 'ツモ');
-        t = t.replace(/論/g, 'ロン').replace(/ろーん/g, 'ロン').replace(/ローン/g, 'ロン');
-        t = t.replace(/ーる$/g, 'オール').replace(/おる$/g, 'オール');
-        t = t.replace(/([^\d\s])\/(\d)/g, '$1 $2');
-        t = t.replace(/(\d)\/([^\d\s])/g, '$1 $2');
-        t = t.replace(/([^\d\s])\/([^\d\s])/g, '$1 $2');
-        t = t.replace(/\s+/g, ' ').trim();
-
-        const numbers = t.match(/\d+/g);
-        const hasTsumo = /ツモ|つも/.test(t);
-        const hasRon = /ロン|ろん/.test(t);
-        const hasAll = /オール|おーる|all/i.test(t);
-        const hasChip = /チップ|ちっぷ|祝儀/.test(t);
-
-        // 麻雀用語チェック
-        const termMatch = t.match(/満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん/);
-        if (termMatch) {
-            const termData = this.mahjongTermToScore(termMatch[0]);
-            if (termData) {
-                if (hasTsumo) {
-                    return { type: 'tsumo-term', term: termMatch[0], termData, needPlayers: ['winner'] };
-                } else {
-                    return { type: 'ron-term', term: termMatch[0], termData, needPlayers: ['winner', 'loser'] };
-                }
-            }
-        }
-
-        if (numbers && numbers.length >= 2 && hasTsumo) {
-            const ko = parseInt(numbers[0]);
-            const oya = parseInt(numbers[1]);
-            if (ko > 0 && oya > 0) {
-                return { type: 'tsumo', ko, oya, needPlayers: ['winner'] };
-            }
-        }
-
-        if (numbers && numbers.length >= 1 && hasAll) {
-            const score = parseInt(numbers[0]);
-            if (score > 0) {
-                return { type: 'tsumo-all', score, needPlayers: ['winner'] };
-            }
-        }
-
-        if (numbers && numbers.length >= 1 && (hasRon || (!hasTsumo && !hasAll && !hasChip))) {
-            const score = parseInt(numbers[0]);
-            if (score > 0) {
-                return { type: 'ron', score, needPlayers: ['winner', 'loser'] };
-            }
-        }
-
-        if (numbers && numbers.length >= 1 && hasChip && this.state.chipEnabled) {
-            const count = parseInt(numbers[0]);
-            if (count > 0) {
-                return { type: 'chip', count, needPlayers: ['from', 'to'] };
-            }
-        }
-
-        // 数字だけでもツモっぽければ
-        if (numbers && numbers.length >= 2) {
-            const ko = parseInt(numbers[0]);
-            const oya = parseInt(numbers[1]);
-            if (ko > 0 && oya > 0 && oya >= ko) {
-                return { type: 'tsumo', ko, oya, needPlayers: ['winner'] };
-            }
-        }
-
-        return null;
-    },
-
-    // プレイヤー選択UIを表示
-    showVoicePlayerSelect(originalText, partial) {
-        this.pendingVoicePartial = partial;
-        this.voiceSelectedPlayers = {};
-
-        const preview = document.getElementById('voice-preview');
-        preview.classList.remove('hidden');
-
-        let desc = '';
-        if (partial.type === 'tsumo') desc = `${partial.ko.toLocaleString()}/${partial.oya.toLocaleString()} ツモ`;
-        else if (partial.type === 'tsumo-all') desc = `${partial.score.toLocaleString()}オール ツモ`;
-        else if (partial.type === 'tsumo-term') desc = `${partial.term} ツモ`;
-        else if (partial.type === 'ron') desc = `${partial.score.toLocaleString()}点 ロン`;
-        else if (partial.type === 'ron-term') desc = `${partial.term} ロン`;
-        else if (partial.type === 'chip') desc = `チップ${partial.count}枚`;
-
-        const labels = {
-            'winner': '和了者', 'loser': '放銃者',
-            'from': '渡す人', 'to': '受け取る人'
+        const gameId = Date.now();
+        const gameRecord = {
+            id: gameId,
+            date: new Date().toISOString(),
+            gameType: this.state.gameType,
+            results: this.lastResults.map(r => ({
+                index: r.index, name: r.name, rank: r.rank,
+                rawScore: r.rawScore, rawDiff: r.rawDiff,
+                umaValue: r.umaValue, okaValue: r.okaValue,
+                finalPoint: r.finalPoint,
+                chipDiff: r.chipDiff, chipPoint: r.chipPoint, totalPoint: r.totalPoint,
+            })),
+            history: [...this.state.history],
         };
+        this.state.sessionGames.push(gameRecord);
+        this._lastSavedResultId = gameId;
+        this.saveState();
+    },
 
-        let playerSelectHTML = '';
-        for (const role of partial.needPlayers) {
-            playerSelectHTML += `
-                <div style="margin:12px 0">
-                    <div style="font-weight:600;margin-bottom:6px">${labels[role]}を選択:</div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        ${this.state.players.map((name, i) => `
-                            <button class="player-select-btn" data-role="${role}" data-index="${i}"
-                                onclick="Tenbou.selectVoicePlayer('${role}', ${i}, this)"
-                                style="padding:10px 18px;font-size:16px;font-weight:700;border-radius:10px;border:2px solid var(--color-border);background:var(--color-bg-card);color:var(--color-text);cursor:pointer;transition:all 0.15s">
-                                ${name}
-                            </button>
-                        `).join('')}
+    // ===== Player Stats =====
+    showStats() {
+        const stats = this.calcPlayerStats();
+        const container = document.getElementById('stats-container');
+        const summary = document.getElementById('stats-session-summary');
+        const gameCount = this.state.sessionGames.length;
+
+        let summaryHtml = `<div class="stats-summary">`;
+        summaryHtml += `<div class="stats-summary-item"><span class="stats-label">完了半荘数</span><span class="stats-value">${gameCount}</span></div>`;
+        if (gameCount > 0) {
+            summaryHtml += `<div class="stats-cumulative">`;
+            summaryHtml += `<h4 style="margin-bottom:8px;color:var(--color-text-secondary)">📊 通算ポイント（チップ除く）</h4>`;
+            const sorted = [...stats].sort((a, b) => b.cumulativePoint - a.cumulativePoint);
+            sorted.forEach((s, i) => {
+                const cls = s.cumulativePoint >= 0 ? 'positive' : 'negative';
+                const sign = s.cumulativePoint >= 0 ? '+' : '';
+                summaryHtml += `<div class="stats-cumulative-row">
+                    <span class="stats-rank">${i + 1}.</span>
+                    <span class="stats-name">${s.name}</span>
+                    <span class="stats-point ${cls}">${sign}${s.cumulativePoint.toFixed(1)}</span>
+                </div>`;
+            });
+            summaryHtml += `</div>`;
+        }
+        summaryHtml += `</div>`;
+        summary.innerHTML = summaryHtml;
+
+        let html = '';
+        stats.forEach(s => {
+            const totalRounds = s.tsumoCount + s.ronWinCount + s.ronLoseCount + s.drawCount + s.otherCount;
+            const winCount = s.tsumoCount + s.ronWinCount;
+            const winRate = totalRounds > 0 ? (winCount / totalRounds * 100).toFixed(1) : '-';
+            const dealInRate = totalRounds > 0 ? (s.ronLoseCount / totalRounds * 100).toFixed(1) : '-';
+
+            html += `<div class="stats-card">
+                <h3 class="stats-player-name">${s.name}</h3>
+                <div class="stats-grid">
+                    <div class="stats-item">
+                        <div class="stats-item-label">和了回数</div>
+                        <div class="stats-item-value">${winCount}</div>
+                        <div class="stats-item-sub">ツモ${s.tsumoCount} / ロン${s.ronWinCount}</div>
+                    </div>
+                    <div class="stats-item">
+                        <div class="stats-item-label">平均打点</div>
+                        <div class="stats-item-value">${s.avgWinScore > 0 ? s.avgWinScore.toLocaleString() : '-'}</div>
+                    </div>
+                    <div class="stats-item">
+                        <div class="stats-item-label">最高打点</div>
+                        <div class="stats-item-value">${s.maxWinScore > 0 ? s.maxWinScore.toLocaleString() : '-'}</div>
+                    </div>
+                    <div class="stats-item">
+                        <div class="stats-item-label">放銃回数</div>
+                        <div class="stats-item-value">${s.ronLoseCount}</div>
+                    </div>
+                    <div class="stats-item">
+                        <div class="stats-item-label">和了率</div>
+                        <div class="stats-item-value">${winRate}%</div>
+                    </div>
+                    <div class="stats-item">
+                        <div class="stats-item-label">放銃率</div>
+                        <div class="stats-item-value">${dealInRate}%</div>
                     </div>
                 </div>
-            `;
-        }
-
-        document.getElementById('voice-preview-text').innerHTML =
-            `<div style="margin-bottom:8px">認識:「${originalText}」</div>` +
-            `<div style="font-size:var(--font-size-xl);font-weight:700;margin-bottom:12px">→ ${desc}</div>` +
-            playerSelectHTML;
-    },
-
-    selectVoicePlayer(role, index, btnElement) {
-        this.voiceSelectedPlayers[role] = index;
-
-        // 同じロールのボタンの選択状態をリセット
-        const siblings = btnElement.parentElement.querySelectorAll('.player-select-btn');
-        siblings.forEach(b => {
-            b.style.background = 'var(--color-bg-card)';
-            b.style.borderColor = 'var(--color-border)';
-            b.style.color = 'var(--color-text)';
+            </div>`;
         });
-        btnElement.style.background = 'var(--color-primary)';
-        btnElement.style.borderColor = 'var(--color-primary)';
-        btnElement.style.color = '#fff';
 
-        // 全ロール選択済みか確認
-        const partial = this.pendingVoicePartial;
-        if (!partial) return;
-
-        const allSelected = partial.needPlayers.every(r => this.voiceSelectedPlayers[r] !== undefined);
-        if (allSelected) {
-            // 自動的にアクションを構築して反映
-            setTimeout(() => this.executeVoicePartial(), 300);
+        if (stats.every(s => s.tsumoCount + s.ronWinCount + s.ronLoseCount === 0) && gameCount === 0) {
+            html = '<p class="history-empty">まだデータがありません</p>';
         }
+
+        container.innerHTML = html;
+        this.showScreen('stats');
     },
 
-    executeVoicePartial() {
-        const p = this.pendingVoicePartial;
-        const sel = this.voiceSelectedPlayers;
-        if (!p) return;
+    calcPlayerStats() {
+        const players = this.state.players;
+        const stats = players.map((name, i) => ({
+            index: i, name, tsumoCount: 0, ronWinCount: 0, ronLoseCount: 0,
+            drawCount: 0, otherCount: 0, totalWinScore: 0, maxWinScore: 0,
+            avgWinScore: 0, cumulativePoint: 0,
+        }));
 
-        if (p.type === 'tsumo') {
-            this.processTsumo(sel.winner, p.ko, p.oya);
-        } else if (p.type === 'tsumo-all') {
-            this.processTsumo(sel.winner, p.score, p.score);
-        } else if (p.type === 'tsumo-term') {
-            const isDealer = sel.winner === this.state.dealerIndex;
-            if (isDealer) {
-                this.processTsumo(sel.winner, p.termData.tsumoAll, p.termData.tsumoAll);
-            } else {
-                this.processTsumo(sel.winner, p.termData.tsumoKo, p.termData.tsumoOya);
+        const allHistories = [];
+        for (const game of this.state.sessionGames) {
+            for (const r of game.results) {
+                const s = stats.find(st => st.index === r.index);
+                if (s) s.cumulativePoint += r.finalPoint;
             }
-        } else if (p.type === 'ron') {
-            if (sel.winner === sel.loser) { alert('和了者と放銃者は異なる必要があります'); return; }
-            this.processRon(sel.winner, sel.loser, p.score);
-        } else if (p.type === 'ron-term') {
-            if (sel.winner === sel.loser) { alert('和了者と放銃者は異なる必要があります'); return; }
-            const isDealer = sel.winner === this.state.dealerIndex;
-            const score = p.termData.ron[isDealer ? 1 : 0];
-            this.processRon(sel.winner, sel.loser, score);
-        } else if (p.type === 'chip') {
-            if (sel.from === sel.to) { alert('渡す人と受け取る人は異なる必要があります'); return; }
-            this.processChip(sel.from, sel.to, p.count);
+            allHistories.push(...game.history);
         }
+        allHistories.push(...this.state.history);
 
-        this.pendingVoicePartial = null;
-        this.voiceSelectedPlayers = {};
-        document.getElementById('voice-preview').classList.add('hidden');
-    },
-
-
-    // ========================================
-    // 漢数字・日本語数字を算用数字に変換
-    // ========================================
-    kanjiToNumber(str) {
-        // まず全角数字→半角
-        let s = str.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-
-        // 単純な漢数字マッピング
-        const kanjiDigits = { '零': '0', '〇': '0', '一': '1', '二': '2', '三': '3', '四': '4', '五': '5', '六': '6', '七': '7', '八': '8', '九': '9' };
-
-        // 漢数字による大きい数の解析 (例: 二千, 三千九百, 八千)
-        const parseKanjiNum = (input) => {
-            let result = 0;
-            let current = 0;
-            for (let i = 0; i < input.length; i++) {
-                const ch = input[i];
-                if (kanjiDigits[ch] !== undefined) {
-                    current = parseInt(kanjiDigits[ch]);
-                } else if (ch === '万') {
-                    result += (current || 1) * 10000;
-                    current = 0;
-                } else if (ch === '千' || ch === 'せん' || ch === 'ぜん') {
-                    result += (current || 1) * 1000;
-                    current = 0;
-                } else if (ch === '百' || ch === 'ひゃく' || ch === 'びゃく' || ch === 'ぴゃく') {
-                    result += (current || 1) * 100;
-                    current = 0;
-                } else if (ch === '十') {
-                    result += (current || 1) * 10;
-                    current = 0;
+        for (const h of allHistories) {
+            if (h.type === 'tsumo') {
+                let winnerIdx = -1, maxGain = 0;
+                for (let i = 0; i < 4; i++) {
+                    if (h.scoreDiffs[i] > maxGain) { maxGain = h.scoreDiffs[i]; winnerIdx = i; }
                 }
-            }
-            result += current;
-            return result;
-        };
-
-        // ひらがな数字パターンの置換テーブル（区切り付きで変換）
-        const kanaNumbers = {
-            'いっせん': '1000', 'にせん': '2000', 'さんぜん': '3000', 'よんせん': '4000',
-            'ごせん': '5000', 'ろくせん': '6000', 'ななせん': '7000', 'はっせん': '8000',
-            'きゅうせん': '9000',
-            'いちまん': '10000', 'にまん': '20000', 'さんまん': '30000', 'よんまん': '40000',
-            'ごまん': '50000',
-            'せん': '1000',
-            // 下位桁
-            'ひゃく': '100', 'にひゃく': '200', 'さんびゃく': '300', 'よんひゃく': '400',
-            'ごひゃく': '500', 'ろっぴゃく': '600', 'ななひゃく': '700', 'はっぴゃく': '800',
-            'きゅうひゃく': '900',
-        };
-
-        // ひらがな複合パターン (例: にせんよんせん → 2000/4000)
-        // 区切り文字「/」を入れて連結されないようにする
-        for (const [kana, num] of Object.entries(kanaNumbers).sort((a, b) => b[0].length - a[0].length)) {
-            s = s.replace(new RegExp(kana, 'g'), '/' + num + '/');
-        }
-        // 連続する区切りをクリーンアップ
-        s = s.replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
-
-        // 漢字パターン (例: 二千 → 2000, 三千九百 → 3900)
-        // 区切り文字を挿入して連結を防ぐ
-        const kanjiNumPattern = /([零〇一二三四五六七八九十百千万]+)/g;
-        s = s.replace(kanjiNumPattern, (match) => {
-            const val = parseKanjiNum(match);
-            return val > 0 ? '/' + val.toString() + '/' : match;
-        });
-        // クリーンアップ
-        s = s.replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
-
-        return s;
-    },
-
-    // ========================================
-    // 麻雀用語を点数に変換
-    // ========================================
-    mahjongTermToScore(term, isDealer) {
-        // ツモの場合: {ko, oya} を返す / ロンの場合: 数値を返す
-        const terms = {
-            // ロン点 (子/親)
-            '満貫': { ron: [8000, 12000], tsumoKo: 2000, tsumoOya: 4000, tsumoAll: 4000 },
-            'まんがん': { ron: [8000, 12000], tsumoKo: 2000, tsumoOya: 4000, tsumoAll: 4000 },
-            'マンガン': { ron: [8000, 12000], tsumoKo: 2000, tsumoOya: 4000, tsumoAll: 4000 },
-            '跳満': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
-            'はねまん': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
-            'ハネマン': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
-            'はね満': { ron: [12000, 18000], tsumoKo: 3000, tsumoOya: 6000, tsumoAll: 6000 },
-            '倍満': { ron: [16000, 24000], tsumoKo: 4000, tsumoOya: 8000, tsumoAll: 8000 },
-            'ばいまん': { ron: [16000, 24000], tsumoKo: 4000, tsumoOya: 8000, tsumoAll: 8000 },
-            'バイマン': { ron: [16000, 24000], tsumoKo: 4000, tsumoOya: 8000, tsumoAll: 8000 },
-            '三倍満': { ron: [24000, 36000], tsumoKo: 6000, tsumoOya: 12000, tsumoAll: 12000 },
-            'さんばいまん': { ron: [24000, 36000], tsumoKo: 6000, tsumoOya: 12000, tsumoAll: 12000 },
-            '役満': { ron: [32000, 48000], tsumoKo: 8000, tsumoOya: 16000, tsumoAll: 16000 },
-            'やくまん': { ron: [32000, 48000], tsumoKo: 8000, tsumoOya: 16000, tsumoAll: 16000 },
-        };
-        return terms[term] || null;
-    },
-
-    // ========================================
-    // プレイヤー名のファジーマッチ
-    // ========================================
-    findPlayerFuzzy(str) {
-        const s = str.toLowerCase().trim();
-        if (!s) return -1;
-
-        const names = this.state.players.map(n => n.toLowerCase());
-
-        // 完全一致
-        for (let i = 0; i < 4; i++) {
-            if (s === names[i]) return i;
-        }
-
-        // 部分一致（名前が文字列に含まれる）
-        for (let i = 0; i < 4; i++) {
-            if (s.includes(names[i]) || names[i].includes(s)) return i;
-        }
-
-        // 最初の1文字一致（短い名前の場合）
-        for (let i = 0; i < 4; i++) {
-            if (names[i].length >= 1 && s.startsWith(names[i][0])) return i;
-        }
-
-        // 風の呼び方にもマッチ
-        const windNames = [
-            ['東', 'ひがし', 'トン', 'とん', '東家', 'とんちゃ'],
-            ['南', 'みなみ', 'ナン', 'なん', '南家', 'なんちゃ'],
-            ['西', 'にし', 'シャー', 'しゃー', '西家', 'しゃーちゃ'],
-            ['北', 'きた', 'ペー', 'ぺー', '北家', 'ぺーちゃ'],
-        ];
-        for (let i = 0; i < 4; i++) {
-            for (const alias of windNames[i]) {
-                if (s.includes(alias)) return i;
+                if (winnerIdx >= 0) {
+                    stats[winnerIdx].tsumoCount++;
+                    stats[winnerIdx].totalWinScore += maxGain;
+                    if (maxGain > stats[winnerIdx].maxWinScore) stats[winnerIdx].maxWinScore = maxGain;
+                }
+            } else if (h.type === 'ron') {
+                let winnerIdx = -1, loserIdx = -1, maxGain = 0, maxLoss = 0;
+                for (let i = 0; i < 4; i++) {
+                    if (h.scoreDiffs[i] > maxGain) { maxGain = h.scoreDiffs[i]; winnerIdx = i; }
+                    if (h.scoreDiffs[i] < maxLoss) { maxLoss = h.scoreDiffs[i]; loserIdx = i; }
+                }
+                if (winnerIdx >= 0) {
+                    stats[winnerIdx].ronWinCount++;
+                    stats[winnerIdx].totalWinScore += maxGain;
+                    if (maxGain > stats[winnerIdx].maxWinScore) stats[winnerIdx].maxWinScore = maxGain;
+                }
+                if (loserIdx >= 0) stats[loserIdx].ronLoseCount++;
+            } else if (h.type === 'ryukyoku') {
+                for (let i = 0; i < 4; i++) stats[i].drawCount++;
             }
         }
 
-        return -1;
-    },
-
-    // ========================================
-    // メインの音声テキスト解析
-    // ========================================
-    parseVoiceText(text) {
-        console.log('parseVoiceText入力:', text);
-
-        // 前処理: 漢数字→算用数字（誤認識修正はnormalizeVoiceTextで済み）
-        let t = this.kanjiToNumber(text);
-        // スペースを正規化（複数→1つ）し、前後をトリム
-        t = t.replace(/\s+/g, ' ').trim();
-        // kanjiToNumberで入った区切り「/」のクリーンアップ:
-        // 数字/数字 の形だけ残し（例: 2000/4000）、他の/はスペースに置換
-        t = t.replace(/([^\d\s])\/(\d)/g, '$1 $2');  // 非数字/数字 → スペース
-        t = t.replace(/(\d)\/([^\d\s])/g, '$1 $2');  // 数字/非数字 → スペース
-        t = t.replace(/([^\d\s])\/([^\d\s])/g, '$1 $2'); // 非数字/非数字 → スペース
-        t = t.replace(/\s+/g, ' ').trim();
-
-        console.log('正規化後:', t);
-
-        const findPlayer = (str) => this.findPlayerFuzzy(str);
-
-        // ============ ツモパターン ============
-
-        // パターン1: "Aが2000/4000ツモ" or "A 2000の4000ツモ" or "A 2000 4000 ツモ"
-        const tsumoPatterns = [
-            /(.+?)(?:が|の|は)\s*(\d+)\s*[/／の]\s*(\d+)\s*(?:ツモ|つも|積も)/,
-            /(.+?)\s+(\d+)\s*[/／の]\s*(\d+)\s*(?:ツモ|つも)/,
-            /(.+?)(?:が|の|は)\s*(\d+)\s+(\d+)\s*(?:ツモ|つも)/,
-            /(.+?)\s+(\d+)\s+(\d+)\s*(?:ツモ|つも)/,
-            // "2000/4000 Aがツモ" (逆順)
-            /(\d+)\s*[/／の]\s*(\d+)\s*(.+?)(?:が|の)\s*(?:ツモ|つも)/,
-        ];
-        for (const pat of tsumoPatterns) {
-            const m = t.match(pat);
-            if (m) {
-                let winner, ko, oya;
-                if (/^\d+$/.test(m[1])) {
-                    // 逆順パターン
-                    ko = parseInt(m[1]);
-                    oya = parseInt(m[2]);
-                    winner = findPlayer(m[3]);
-                } else {
-                    winner = findPlayer(m[1]);
-                    ko = parseInt(m[2]);
-                    oya = parseInt(m[3]);
-                }
-                if (winner >= 0 && ko > 0 && oya > 0) {
-                    return {
-                        type: 'tsumo', winnerIdx: winner, koScore: ko, oyaScore: oya,
-                        description: `${this.state.players[winner]} ${ko.toLocaleString()}/${oya.toLocaleString()} ツモ`
-                    };
-                }
-            }
+        for (const s of stats) {
+            const totalWins = s.tsumoCount + s.ronWinCount;
+            s.avgWinScore = totalWins > 0 ? Math.round(s.totalWinScore / totalWins) : 0;
         }
-
-        // パターン2: "Aが8000オール" / "Aが4000点オール" (親ツモ)
-        const allPatterns = [
-            /(.+?)(?:が|の|は)\s*(\d+)\s*(?:点)?\s*(?:オール|おーる|all|オル)/i,
-            /(\d+)\s*(?:点)?\s*(?:オール|おーる|all)\s*(.+?)(?:が|の)\s*(?:ツモ|つも)/i,
-        ];
-        for (const pat of allPatterns) {
-            const m = t.match(pat);
-            if (m) {
-                let winner, score;
-                if (/^\d+$/.test(m[1])) {
-                    score = parseInt(m[1]);
-                    winner = findPlayer(m[2]);
-                } else {
-                    winner = findPlayer(m[1]);
-                    score = parseInt(m[2]);
-                }
-                if (winner >= 0 && score > 0) {
-                    return {
-                        type: 'tsumo', winnerIdx: winner, koScore: score, oyaScore: score,
-                        description: `${this.state.players[winner]} ${score.toLocaleString()}オール ツモ`
-                    };
-                }
-            }
-        }
-
-        // パターン3: 麻雀用語ツモ "Aが満貫ツモ" / "Aが跳満ツモ"
-        const termTsumoPatterns = [
-            /(.+?)(?:が|の|は)\s*(満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん)\s*(?:ツモ|つも)/,
-        ];
-        for (const pat of termTsumoPatterns) {
-            const m = t.match(pat);
-            if (m) {
-                const winner = findPlayer(m[1]);
-                const termData = this.mahjongTermToScore(m[2]);
-                if (winner >= 0 && termData) {
-                    const isDealer = winner === this.state.dealerIndex;
-                    if (isDealer) {
-                        return {
-                            type: 'tsumo', winnerIdx: winner, koScore: termData.tsumoAll, oyaScore: termData.tsumoAll,
-                            description: `${this.state.players[winner]} ${m[2]} ${termData.tsumoAll.toLocaleString()}オール ツモ`
-                        };
-                    } else {
-                        return {
-                            type: 'tsumo', winnerIdx: winner, koScore: termData.tsumoKo, oyaScore: termData.tsumoOya,
-                            description: `${this.state.players[winner]} ${m[2]} ${termData.tsumoKo.toLocaleString()}/${termData.tsumoOya.toLocaleString()} ツモ`
-                        };
-                    }
-                }
-            }
-        }
-
-        // ============ ロンパターン ============
-
-        // チップ系キーワードがあればロンとして処理しない
-        const isChipContext = /チップ|ちっぷ|祝儀|しゅうぎ/.test(t);
-
-        if (!isChipContext) {
-            // パターン4: "AからBへ3900ロン" / "AからBに3900" / "AからBへ3900点"
-            const ronPatterns = [
-                /(.+?)から(.+?)[へに]\s*(\d+)\s*(?:点)?\s*(?:ロン|ろん)?/,
-                /(.+?)が(.+?)(?:から|に)\s*(\d+)\s*(?:点)?\s*(?:ロン|ろん)/,
-                // "3900点 AからBへロン"
-                /(\d+)\s*(?:点)?\s*(.+?)から(.+?)[へに]\s*(?:ロン|ろん)/,
-                // "BがAに3900ロン" (和了者が主語)
-                /(.+?)が(.+?)[へに]\s*(\d+)\s*(?:点)?\s*(?:ロン|ろん)/,
-            ];
-            for (const pat of ronPatterns) {
-                const m = t.match(pat);
-                if (m) {
-                    let loser, winner, score;
-                    if (/^\d+$/.test(m[1])) {
-                        score = parseInt(m[1]);
-                        loser = findPlayer(m[2]);
-                        winner = findPlayer(m[3]);
-                    } else if (pat === ronPatterns[3]) {
-                        // "BがAに3900ロン" → B=winner, A=loser
-                        winner = findPlayer(m[1]);
-                        loser = findPlayer(m[2]);
-                        score = parseInt(m[3]);
-                    } else {
-                        loser = findPlayer(m[1]);
-                        winner = findPlayer(m[2]);
-                        score = parseInt(m[3]);
-                    }
-                    if (loser >= 0 && winner >= 0 && loser !== winner && score > 0) {
-                        return {
-                            type: 'ron', winnerIdx: winner, loserIdx: loser, score: score,
-                            description: `${this.state.players[loser]}→${this.state.players[winner]} ${score.toLocaleString()}点 ロン`
-                        };
-                    }
-                }
-            }
-
-            // パターン5: 麻雀用語ロン "AからBへ満貫ロン" / "AからBに跳満"
-            const termRonPatterns = [
-                /(.+?)から(.+?)[へに]\s*(満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん)\s*(?:ロン|ろん)?/,
-                /(.+?)が(.+?)[へに]\s*(満貫|まんがん|マンガン|跳満|はねまん|ハネマン|はね満|倍満|ばいまん|バイマン|三倍満|さんばいまん|役満|やくまん)\s*(?:ロン|ろん)/,
-            ];
-            for (const pat of termRonPatterns) {
-                const m = t.match(pat);
-                if (m) {
-                    let loser, winner;
-                    if (pat === termRonPatterns[1]) {
-                        winner = findPlayer(m[1]);
-                        loser = findPlayer(m[2]);
-                    } else {
-                        loser = findPlayer(m[1]);
-                        winner = findPlayer(m[2]);
-                    }
-                    const termData = this.mahjongTermToScore(m[3]);
-                    if (loser >= 0 && winner >= 0 && loser !== winner && termData) {
-                        const isWinnerDealer = winner === this.state.dealerIndex;
-                        const score = termData.ron[isWinnerDealer ? 1 : 0];
-                        return {
-                            type: 'ron', winnerIdx: winner, loserIdx: loser, score: score,
-                            description: `${this.state.players[loser]}→${this.state.players[winner]} ${m[3]} ${score.toLocaleString()}点 ロン`
-                        };
-                    }
-                }
-            }
-        }
-
-        // ============ チップパターン ============
-        if (this.state.chipEnabled) {
-            const chipPatterns = [
-                /(.+?)から(.+?)[へに]\s*(?:チップ|ちっぷ|祝儀|しゅうぎ)\s*(\d+)\s*(?:枚|まい)/,
-                /(.+?)から(.+?)[へに]\s*(\d+)\s*(?:枚|まい)\s*(?:チップ|ちっぷ|祝儀|しゅうぎ)/,
-                /(.+?)から(.+?)[へに]\s*(\d+)\s*(?:チップ|ちっぷ)/,
-            ];
-            for (const pat of chipPatterns) {
-                const m = t.match(pat);
-                if (m) {
-                    const from = findPlayer(m[1]);
-                    const to = findPlayer(m[2]);
-                    const count = parseInt(m[3]);
-                    if (from >= 0 && to >= 0 && from !== to && count > 0) {
-                        return {
-                            type: 'chip', fromIdx: from, toIdx: to, count: count,
-                            description: `${this.state.players[from]}→${this.state.players[to]} チップ${count}枚`
-                        };
-                    }
-                }
-            }
-        }
-
-        // ============ 最終フォールバック: 数字のみ抽出 ============
-        // 2つの数字 + ツモっぽい言葉があれば候補として提示
-        const numbersInText = t.match(/\d+/g);
-        if (numbersInText && numbersInText.length >= 2 && /ツモ|つも/.test(t)) {
-            const ko = parseInt(numbersInText[0]);
-            const oya = parseInt(numbersInText[1]);
-            if (ko > 0 && oya > 0) {
-                // プレイヤー名探し
-                const cleaned = t.replace(/\d+/g, '').replace(/ツモ|つも|が|の|は/g, '');
-                const winner = findPlayer(cleaned);
-                if (winner >= 0) {
-                    return {
-                        type: 'tsumo', winnerIdx: winner, koScore: ko, oyaScore: oya,
-                        description: `${this.state.players[winner]} ${ko.toLocaleString()}/${oya.toLocaleString()} ツモ`
-                    };
-                }
-            }
-        }
-
-        return null;
-    },
-
-    confirmVoice() {
-        const action = this.pendingVoiceAction;
-        if (!action) return;
-
-        if (action.type === 'tsumo') {
-            this.processTsumo(action.winnerIdx, action.koScore, action.oyaScore);
-        } else if (action.type === 'ron') {
-            this.processRon(action.winnerIdx, action.loserIdx, action.score);
-        } else if (action.type === 'chip') {
-            this.processChip(action.fromIdx, action.toIdx, action.count);
-        }
-
-        this.pendingVoiceAction = null;
-        document.getElementById('voice-preview').classList.add('hidden');
-    },
-
-    cancelVoice() {
-        this.pendingVoiceAction = null;
-        document.getElementById('voice-preview').classList.add('hidden');
+        return stats;
     },
 
     // ===== Settlement (精算) =====
     showResult() {
-        // Calculate final scores with uma/oka
         const results = [];
         for (let i = 0; i < 4; i++) {
             results.push({
-                index: i,
-                name: this.state.players[i],
+                index: i, name: this.state.players[i],
                 rawScore: this.state.scores[i],
                 chips: this.state.chips[i],
                 chipDiff: this.state.chips[i] - this.state.initialChips,
             });
         }
 
-        // Sort by score (descending) for ranking
         results.sort((a, b) => b.rawScore - a.rawScore);
 
-        // Assign ranks and calculate final points
         const returnPts = this.state.returnPoints;
         for (let rank = 0; rank < 4; rank++) {
             const r = results[rank];
             r.rank = rank + 1;
-            // 素点 (rawScore - returnPoints) / 1000
             r.rawDiff = (r.rawScore - returnPts) / 1000;
-            // ウマ
             r.umaValue = this.state.uma[rank];
-            // オカ (1位のみ)
             r.okaValue = rank === 0 ? this.state.oka : 0;
-            // 最終ポイント
             r.finalPoint = r.rawDiff + r.umaValue + r.okaValue;
-            // チップ精算
             r.chipPoint = this.state.chipEnabled ? r.chipDiff * (this.state.chipValue / 1000) : 0;
-            // 総合
             r.totalPoint = r.finalPoint + r.chipPoint;
         }
 
-        // Render result
         const container = document.getElementById('result-container');
-        let html = '';
+        const gameNum = this.state.sessionGames.length + 1;
+        const gameTypeLabel = this.state.gameType === 'tonpu' ? '東風戦' : '半荘戦';
+        let html = `<div style="text-align:center;margin-bottom:12px;color:var(--color-text-secondary);font-size:var(--font-size-sm)">第${gameNum}回 ${gameTypeLabel}</div>`;
 
         results.forEach(r => {
             const mainClass = r.totalPoint >= 0 ? 'positive' : 'negative';
             const mainText = r.totalPoint >= 0 ? `+${r.totalPoint.toFixed(1)}` : r.totalPoint.toFixed(1);
-
             html += `
         <div class="result-player rank-${r.rank}">
           <div>
@@ -1278,8 +896,7 @@ const Tenbou = {
             </div>
             ${this.state.chipEnabled ? `<div class="result-chip-line">🎰 チップ: ${r.chipDiff >= 0 ? '+' : ''}${r.chipDiff}枚 (${r.chipPoint >= 0 ? '+' : ''}${r.chipPoint.toFixed(1)})</div>` : ''}
           </div>
-        </div>
-      `;
+        </div>`;
         });
 
         container.innerHTML = html;
@@ -1291,35 +908,92 @@ const Tenbou = {
         this.showScreen('game');
     },
 
+    // ===== End Session =====
+    endSession() {
+        // 現在の半荘を保存
+        if (this.lastResults) {
+            this.saveCurrentGameToSession();
+        } else if (this.state.history.length > 0) {
+            // 未精算なら先に精算
+            this.showResult();
+            this.saveCurrentGameToSession();
+        }
+
+        const container = document.getElementById('session-end-container');
+        const games = this.state.sessionGames;
+
+        if (games.length === 0) {
+            container.innerHTML = '<p class="history-empty">完了した半荘がありません</p>';
+            this.showScreen('session-end');
+            return;
+        }
+
+        // プレイヤーごとの通算集計
+        const totals = {};
+        for (const game of games) {
+            for (const r of game.results) {
+                if (!totals[r.name]) {
+                    totals[r.name] = { name: r.name, totalPoint: 0, totalChipPoint: 0, games: 0, ranks: [] };
+                }
+                totals[r.name].totalPoint += r.finalPoint;
+                totals[r.name].totalChipPoint += r.chipPoint || 0;
+                totals[r.name].games++;
+                totals[r.name].ranks.push(r.rank);
+            }
+        }
+
+        const sorted = Object.values(totals).sort((a, b) => (b.totalPoint + b.totalChipPoint) - (a.totalPoint + a.totalChipPoint));
+
+        let html = `<div style="text-align:center;margin-bottom:16px;color:var(--color-text-secondary)">全${games.length}半荘</div>`;
+
+        sorted.forEach((p, i) => {
+            const total = p.totalPoint + p.totalChipPoint;
+            const mainClass = total >= 0 ? 'positive' : 'negative';
+            const mainText = total >= 0 ? `+${total.toFixed(1)}` : total.toFixed(1);
+            const avgRank = (p.ranks.reduce((a, b) => a + b, 0) / p.ranks.length).toFixed(2);
+
+            html += `
+        <div class="result-player rank-${i + 1}">
+          <div>
+            <span class="result-player-name">${p.name}</span>
+            <span class="result-player-rank rank-badge-${i + 1}">${i + 1}位</span>
+          </div>
+          <div class="result-player-score">
+            <div class="result-score-main ${mainClass}">${mainText}</div>
+            <div class="result-score-detail">
+              ポイント: ${p.totalPoint >= 0 ? '+' : ''}${p.totalPoint.toFixed(1)}${this.state.chipEnabled ? ` / チップ: ${p.totalChipPoint >= 0 ? '+' : ''}${p.totalChipPoint.toFixed(1)}` : ''} / 平均着順: ${avgRank}
+            </div>
+          </div>
+        </div>`;
+        });
+
+        // 各半荘の結果一覧
+        html += `<div style="margin-top:20px"><h4 style="color:var(--color-text-secondary);margin-bottom:8px">📋 各半荘の結果</h4>`;
+        games.forEach((game, gi) => {
+            const sorted = [...game.results].sort((a, b) => a.rank - b.rank);
+            html += `<div style="padding:8px 12px;background:var(--color-bg-tertiary);border-radius:8px;margin-bottom:6px;font-size:var(--font-size-sm)">`;
+            html += `<strong>第${gi + 1}回</strong> `;
+            sorted.forEach(r => {
+                const t = r.totalPoint >= 0 ? `+${r.totalPoint.toFixed(1)}` : r.totalPoint.toFixed(1);
+                html += `${r.name}:${t} `;
+            });
+            html += `</div>`;
+        });
+        html += `</div>`;
+
+        this._sessionEndResults = sorted;
+        container.innerHTML = html;
+        this.showScreen('session-end');
+    },
+
     copyResult() {
         if (!this.lastResults) return;
-        let text = '📊 精算結果\n';
-        text += '─'.repeat(20) + '\n';
-
+        let text = '📊 精算結果\n' + '─'.repeat(20) + '\n';
         this.lastResults.forEach(r => {
             const mainText = r.totalPoint >= 0 ? `+${r.totalPoint.toFixed(1)}` : r.totalPoint.toFixed(1);
             text += `${r.rank}位 ${r.name}: ${mainText}\n`;
-            text += `  素点:${r.rawDiff >= 0 ? '+' : ''}${r.rawDiff.toFixed(1)} ウマ:${r.umaValue >= 0 ? '+' : ''}${r.umaValue} オカ:${r.okaValue >= 0 ? '+' : ''}${r.okaValue}\n`;
-            if (this.state.chipEnabled) {
-                text += `  チップ: ${r.chipDiff >= 0 ? '+' : ''}${r.chipDiff}枚 (${r.chipPoint >= 0 ? '+' : ''}${r.chipPoint.toFixed(1)})\n`;
-            }
         });
-
-        navigator.clipboard.writeText(text).then(() => {
-            const btn = document.querySelector('.btn-share:not(.btn-line)');
-            if (btn) {
-                btn.textContent = '✅ コピー済み';
-                setTimeout(() => { btn.textContent = '📋 コピー'; }, 2000);
-            }
-        }).catch(() => {
-            // Fallback
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-        });
+        this._copyText(text, '.btn-share:not(.btn-line)');
     },
 
     shareToLINE() {
@@ -1329,23 +1003,67 @@ const Tenbou = {
             const mainText = r.totalPoint >= 0 ? `+${r.totalPoint.toFixed(1)}` : r.totalPoint.toFixed(1);
             text += `${r.rank}位 ${r.name}: ${mainText}\n`;
         });
+        window.open(`https://social-plugins.line.me/lineit/share?url=&text=${encodeURIComponent(text)}`, '_blank');
+    },
 
-        const url = `https://social-plugins.line.me/lineit/share?url=&text=${encodeURIComponent(text)}`;
-        window.open(url, '_blank');
+    copySessionResult() {
+        if (!this._sessionEndResults) return;
+        const games = this.state.sessionGames;
+        let text = `🏁 本日の対局結果（全${games.length}半荘）\n` + '─'.repeat(20) + '\n';
+        this._sessionEndResults.forEach((p, i) => {
+            const total = p.totalPoint + p.totalChipPoint;
+            const mainText = total >= 0 ? `+${total.toFixed(1)}` : total.toFixed(1);
+            text += `${i + 1}位 ${p.name}: ${mainText}\n`;
+        });
+        this._copyText(text);
+    },
+
+    shareSessionToLINE() {
+        if (!this._sessionEndResults) return;
+        const games = this.state.sessionGames;
+        let text = `🏁 本日の対局結果（全${games.length}半荘）\n`;
+        this._sessionEndResults.forEach((p, i) => {
+            const total = p.totalPoint + p.totalChipPoint;
+            const mainText = total >= 0 ? `+${total.toFixed(1)}` : total.toFixed(1);
+            text += `${i + 1}位 ${p.name}: ${mainText}\n`;
+        });
+        window.open(`https://social-plugins.line.me/lineit/share?url=&text=${encodeURIComponent(text)}`, '_blank');
+    },
+
+    _copyText(text, btnSelector) {
+        navigator.clipboard.writeText(text).then(() => {
+            if (btnSelector) {
+                const btn = document.querySelector(btnSelector);
+                if (btn) {
+                    btn.textContent = '✅ コピー済み';
+                    setTimeout(() => { btn.textContent = '📋 コピー'; }, 2000);
+                }
+            }
+        }).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        });
     },
 
     // ===== Reset =====
     resetGame() {
-        if (!confirm('対局データをリセットしますか？\nすべての取引履歴が消去されます。')) return;
-
+        if (!confirm('対局データをリセットしますか？\nすべての取引履歴・セッションデータが消去されます。')) return;
         localStorage.removeItem('tenbou-state');
         this.state.scores = [this.state.startingPoints, this.state.startingPoints, this.state.startingPoints, this.state.startingPoints];
         this.state.chips = [this.state.initialChips, this.state.initialChips, this.state.initialChips, this.state.initialChips];
+        this.state.currentRound = 0;
         this.state.dealerIndex = 0;
         this.state.honba = 0;
         this.state.kyoutaku = 0;
         this.state.history = [];
-
+        this.state.sessionGames = [];
+        this.lastResults = null;
+        this._lastSavedResultId = null;
+        this._gameEnded = false;
         this.showScreen('setup');
     },
 
@@ -1353,9 +1071,7 @@ const Tenbou = {
     saveState() {
         try {
             localStorage.setItem('tenbou-state', JSON.stringify(this.state));
-        } catch (e) {
-            console.error('保存エラー:', e);
-        }
+        } catch (e) { console.error('保存エラー:', e); }
     },
 
     loadState() {
@@ -1363,23 +1079,22 @@ const Tenbou = {
             const data = JSON.parse(localStorage.getItem('tenbou-state'));
             if (!data || !data.currentScreen) return;
 
-            // Only restore if was in game
             if (data.currentScreen === 'game') {
                 Object.assign(this.state, data);
+                if (!this.state.sessionGames) this.state.sessionGames = [];
+                if (this.state.currentRound === undefined) this.state.currentRound = 0;
+                if (!this.state.gameType) this.state.gameType = 'hanchan';
                 this.showScreen('game');
                 this.renderPlayers();
                 this.renderHistory();
+                this.updateRoundDisplay();
 
-                // Hide chip button if disabled
                 const chipBtn = document.getElementById('chip-action-btn');
                 if (chipBtn) chipBtn.classList.toggle('hidden', !this.state.chipEnabled);
 
-                // Restore setup inputs for reference
                 this.restoreSetupInputs();
             }
-        } catch (e) {
-            console.error('復元エラー:', e);
-        }
+        } catch (e) { console.error('復元エラー:', e); }
     },
 
     restoreSetupInputs() {
@@ -1401,7 +1116,13 @@ const Tenbou = {
         document.getElementById('chip-settings').classList.toggle('hidden', !this.state.chipEnabled);
         document.getElementById('setup-chip-count').value = this.state.initialChips;
         document.getElementById('setup-chip-value').value = this.state.chipValue;
-        document.querySelector('.toggle-label').textContent = this.state.chipEnabled ? 'チップあり' : 'チップなし';
+        document.getElementById('setup-tenpai-renchan').checked = this.state.tenpaiRenchan;
+        document.getElementById('setup-agari-yame').checked = this.state.agariYame;
+        // Restore game type button
+        document.querySelectorAll('.game-type-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.type === this.state.gameType);
+        });
+        this._selectedGameType = this.state.gameType;
     }
 };
 
