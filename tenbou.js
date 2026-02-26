@@ -214,7 +214,7 @@ const Tenbou = {
     renderHistory() {
         const list = document.getElementById('history-list');
         if (this.state.history.length === 0) {
-            list.innerHTML = '<p class="history-empty">まだ取引がありません</p>';
+            list.innerHTML = '<p class="history-empty">まだ点棒授受がありません</p>';
             return;
         }
         list.innerHTML = '';
@@ -548,7 +548,7 @@ const Tenbou = {
     // ===== Undo =====
     undoLast() {
         if (this.state.history.length === 0) {
-            alert('取り消す取引がありません');
+            alert('取り消す点棒授受がありません');
             return;
         }
 
