@@ -339,18 +339,7 @@ body {
     display: none !important;
 }
 
-.grid {
-    display: grid;
-    gap: var(--spacing-sm);
-}
-
-.grid-2 {
-    grid-template-columns: repeat(2, 1fr);
-}
-
-.grid-4 {
-    grid-template-columns: repeat(4, 1fr);
-}
+/* (responsive .grid/.grid-2/.grid-4 defined above) */
 
 /* ===========================
    Round Display
