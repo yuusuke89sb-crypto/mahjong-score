@@ -616,6 +616,10 @@ body {
     color: var(--color-text-secondary);
     margin-bottom: var(--spacing-xs);
     margin-top: var(--spacing-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }
 
 .player-score {
@@ -795,6 +799,9 @@ body {
     cursor: pointer;
     transition: all var(--transition-fast);
     text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .player-select-btn:hover {
@@ -1190,7 +1197,11 @@ body {
     }
 
     .player-card {
-        padding: var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-xs);
+    }
+
+    .player-name {
+        font-size: var(--font-size-xs);
     }
 
     .action-buttons {
@@ -1205,4 +1216,152 @@ body {
         gap: var(--spacing-md);
         padding: var(--spacing-sm) var(--spacing-md);
     }
+
+    .score-table-btn {
+        font-size: 10px;
+        padding: 4px 2px;
+    }
+
+    .score-table-fu,
+    .score-table-han,
+    .score-table-corner {
+        font-size: 10px;
+    }
+
+    .score-table-mangan {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* ===========================
+   Input Mode Tabs
+   =========================== */
+.input-mode-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: var(--spacing-md);
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 3px;
+}
+
+.input-mode-tab {
+    flex: 1;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    font-family: var(--font-family);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.input-mode-tab.active {
+    background: var(--color-primary);
+    color: white;
+    box-shadow: var(--shadow-sm);
+}
+
+.input-mode-tab:hover:not(.active) {
+    background: rgba(99, 102, 241, 0.1);
+}
+
+/* ===========================
+   Score Table
+   =========================== */
+.score-table-container {
+    margin-top: var(--spacing-xs);
+}
+
+.score-table {
+    display: grid;
+    gap: 2px;
+    margin-bottom: var(--spacing-md);
+    overflow-x: auto;
+}
+
+.score-table-header,
+.score-table-row {
+    display: grid;
+    grid-template-columns: 50px repeat(4, 1fr);
+    gap: 2px;
+}
+
+.score-table-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.score-table-corner {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    color: var(--color-text-secondary);
+}
+
+.score-table-han {
+    font-weight: 700;
+    color: var(--color-primary-light);
+    font-size: var(--font-size-xs);
+}
+
+.score-table-fu {
+    font-weight: 700;
+    color: var(--color-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.score-table-btn {
+    width: 100%;
+    padding: 6px 4px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-family);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: center;
+    line-height: 1.2;
+}
+
+.score-table-btn:hover {
+    border-color: var(--color-primary);
+    background: rgba(79, 70, 229, 0.15);
+    color: var(--color-primary-light);
+}
+
+.score-table-btn:active {
+    transform: scale(0.95);
+}
+
+.score-table-btn-sub {
+    font-size: 10px;
+    opacity: 0.8;
+}
+
+.score-table-mangan {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+}
+
+.score-table-btn.mangan {
+    padding: 8px 4px;
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(6, 182, 212, 0.1));
+    border-color: rgba(79, 70, 229, 0.3);
+    font-size: var(--font-size-xs);
+}
+
+.score-table-btn.mangan:hover {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.25), rgba(6, 182, 212, 0.25));
+    border-color: var(--color-primary);
 }

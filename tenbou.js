@@ -23,6 +23,7 @@ const Tenbou = {
         currentRound: 0,       // 0=東1, 1=東2, ... 4=南1, ... 7=南4
         tenpaiRenchan: true,
         agariYame: false,
+        doubleRon: false,
         // History & session
         history: [],
         sessionGames: [],
@@ -32,9 +33,13 @@ const Tenbou = {
     // Manual input state
     manualMode: null,
     selectedWinner: null,
+    selectedWinners: [],  // for double-ron
     selectedLoser: null,
     selectedChipFrom: null,
     selectedChipTo: null,
+    _tsumoInputMode: 'table',
+    _ronInputMode: 'table',
+    _ron2InputMode: 'table',
 
     // ===== Init =====
     init() {
@@ -82,6 +87,12 @@ const Tenbou = {
         agari.addEventListener('change', () => {
             document.getElementById('agari-yame-label').textContent = agari.checked ? '上がり止めあり' : '上がり止めなし';
         });
+        const doubleRon = document.getElementById('setup-double-ron');
+        if (doubleRon) {
+            doubleRon.addEventListener('change', () => {
+                document.getElementById('double-ron-label').textContent = doubleRon.checked ? 'ダブロンあり' : 'ダブロンなし';
+            });
+        }
     },
 
     setupInputAutoSelect() {
@@ -147,6 +158,7 @@ const Tenbou = {
         this.state.gameType = this._selectedGameType || 'hanchan';
         this.state.tenpaiRenchan = document.getElementById('setup-tenpai-renchan').checked;
         this.state.agariYame = document.getElementById('setup-agari-yame').checked;
+        this.state.doubleRon = document.getElementById('setup-double-ron') ? document.getElementById('setup-double-ron').checked : false;
 
         this.state.chipEnabled = document.getElementById('setup-chip-enabled').checked;
         this.state.initialChips = parseInt(document.getElementById('setup-chip-count').value) || 20;
@@ -466,24 +478,80 @@ const Tenbou = {
 
     // ===== Process Ryukyoku =====
     handleRyukyoku() {
-        if (this.state.tenpaiRenchan) {
-            // テンパイ連荘あり → 親テンパイか確認
-            document.getElementById('ryukyoku-select').classList.remove('hidden');
-        } else {
-            // テンパイ連荘なし → 常に親流れ
-            this.processRyukyoku(false);
+        // Show noten player selection UI
+        const panel = document.getElementById('ryukyoku-select');
+        panel.classList.remove('hidden');
+        const container = document.getElementById('ryukyoku-noten-select');
+        container.innerHTML = '';
+        this._ryukyokuNotenPlayers = new Set(); // track who is noten
+
+        for (let i = 0; i < 4; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'player-select-btn';
+            btn.textContent = this.state.players[i];
+            btn.setAttribute('data-index', i);
+            btn.onclick = () => {
+                btn.classList.toggle('selected');
+                if (this._ryukyokuNotenPlayers.has(i)) {
+                    this._ryukyokuNotenPlayers.delete(i);
+                } else {
+                    this._ryukyokuNotenPlayers.add(i);
+                }
+            };
+            container.appendChild(btn);
         }
     },
 
-    processRyukyoku(dealerTenpai) {
+    confirmRyukyoku() {
+        const notenPlayers = this._ryukyokuNotenPlayers || new Set();
+        const notenCount = notenPlayers.size;
+        const tenpaiCount = 4 - notenCount;
+        const dealerTenpai = !notenPlayers.has(this.state.dealerIndex);
+
+        // Calculate noten penalty score diffs
+        const scoreDiffs = [0, 0, 0, 0];
+        if (notenCount > 0 && notenCount < 4) {
+            // 3000 total to distribute
+            const notenPenalty = Math.floor(3000 / notenCount);
+            const tenpaiBonus = Math.floor(3000 / tenpaiCount);
+            for (let i = 0; i < 4; i++) {
+                if (notenPlayers.has(i)) {
+                    scoreDiffs[i] = -notenPenalty;
+                } else {
+                    scoreDiffs[i] = tenpaiBonus;
+                }
+            }
+        }
+
+        this.processRyukyoku(dealerTenpai, scoreDiffs, notenPlayers);
+    },
+
+    processRyukyoku(dealerTenpai, scoreDiffs, notenPlayers) {
         document.getElementById('ryukyoku-select').classList.add('hidden');
 
-        const desc = `【${this.getRoundName(this.state.currentRound)}】流局 (${this.state.honba}本場)` +
-            (this.state.tenpaiRenchan ? (dealerTenpai ? ' 親テンパイ' : ' 親ノーテン') : '');
+        scoreDiffs = scoreDiffs || [0, 0, 0, 0];
+        notenPlayers = notenPlayers || new Set();
+
+        // Apply score diffs
+        for (let i = 0; i < 4; i++) {
+            this.state.scores[i] += scoreDiffs[i];
+        }
+
+        // Build description
+        const notenCount = notenPlayers.size;
+        let desc = `【${this.getRoundName(this.state.currentRound)}】流局 (${this.state.honba}本場)`;
+        if (notenCount > 0 && notenCount < 4) {
+            const notenNames = [...notenPlayers].map(i => this.state.players[i]).join('・');
+            desc += ` ノーテン: ${notenNames}`;
+        } else if (notenCount === 0) {
+            desc += ' 全員テンパイ';
+        } else {
+            desc += ' 全員ノーテン';
+        }
 
         const entry = {
             type: 'ryukyoku', description: desc,
-            scoreDiffs: [0, 0, 0, 0], chipDiffs: [0, 0, 0, 0],
+            scoreDiffs, chipDiffs: [0, 0, 0, 0],
             prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
             prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
         };
@@ -575,6 +643,7 @@ const Tenbou = {
     showManualInput(mode) {
         this.manualMode = mode;
         this.selectedWinner = null;
+        this.selectedWinners = [];
         this.selectedLoser = null;
         this.selectedChipFrom = null;
         this.selectedChipTo = null;
@@ -587,9 +656,20 @@ const Tenbou = {
         if (mode === 'tsumo') {
             title.textContent = '✋ ツモ入力';
             document.getElementById('manual-tsumo').classList.remove('hidden');
-            this.renderPlayerSelect('tsumo-winner-select', (idx) => { this.selectedWinner = idx; });
+            this.renderPlayerSelect('tsumo-winner-select', (idx) => {
+                this.selectedWinner = idx;
+                this.generateScoreTable('tsumo');
+            });
             document.getElementById('tsumo-ko').value = '';
             document.getElementById('tsumo-oya').value = '';
+            // Reset to table mode
+            this._tsumoInputMode = 'table';
+            document.getElementById('tsumo-table-mode').classList.remove('hidden');
+            document.getElementById('tsumo-manual-mode').classList.add('hidden');
+            document.getElementById('tsumo-score-table').innerHTML = '<p class="form-hint" style="text-align:center;padding:16px">先に和了者を選択してください</p>';
+            // Reset tabs
+            document.querySelectorAll('#manual-tsumo .input-mode-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+
             const chipSection = document.getElementById('tsumo-chip-section');
             if (chipSection) {
                 chipSection.style.display = this.state.chipEnabled ? '' : 'none';
@@ -598,9 +678,46 @@ const Tenbou = {
         } else if (mode === 'ron') {
             title.textContent = '👊 ロン入力';
             document.getElementById('manual-ron').classList.remove('hidden');
-            this.renderPlayerSelect('ron-winner-select', (idx) => { this.selectedWinner = idx; });
-            this.renderPlayerSelect('ron-loser-select', (idx) => { this.selectedLoser = idx; });
+
+            if (this.state.doubleRon) {
+                // Double-ron: multi-select for winners
+                document.getElementById('ron-winner-label').textContent = '和了者（複数選択可）';
+                this.renderPlayerSelectMulti('ron-winner-select', (indices) => {
+                    this.selectedWinners = indices;
+                    this.selectedWinner = indices.length > 0 ? indices[0] : null;
+                    this.showDoubleRonSection();
+                    this.generateScoreTable('ron');
+                    if (indices.length > 1) {
+                        this.generateScoreTable('ron2');
+                    }
+                });
+            } else {
+                document.getElementById('ron-winner-label').textContent = '和了者';
+                this.renderPlayerSelect('ron-winner-select', (idx) => {
+                    this.selectedWinner = idx;
+                    this.selectedWinners = [idx];
+                    this.generateScoreTable('ron');
+                });
+            }
+
+            this.renderPlayerSelect('ron-loser-select', (idx) => {
+                this.selectedLoser = idx;
+            });
+
+            // Reset to table mode
+            this._ronInputMode = 'table';
+            this._ron2InputMode = 'table';
+            document.getElementById('ron-table-mode').classList.remove('hidden');
+            document.getElementById('ron-manual-mode').classList.add('hidden');
+            document.getElementById('ron-score-table').innerHTML = '<p class="form-hint" style="text-align:center;padding:16px">先に和了者を選択してください</p>';
             document.getElementById('ron-score').value = '';
+            // Reset tabs
+            document.querySelectorAll('#manual-ron > .form-group:last-of-type .input-mode-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+
+            // Hide double-ron section initially
+            document.getElementById('double-ron-section').classList.add('hidden');
+            const ron2Score = document.getElementById('ron2-score');
+            if (ron2Score) ron2Score.value = '';
         } else if (mode === 'chip') {
             title.textContent = '🎰 チップ移動';
             document.getElementById('manual-chip').classList.remove('hidden');
@@ -613,6 +730,166 @@ const Tenbou = {
     hideManualInput() {
         document.getElementById('manual-panel').classList.add('hidden');
         this.manualMode = null;
+    },
+
+    switchInputMode(type, mode, btn) {
+        const tableEl = document.getElementById(`${type}-table-mode`);
+        const manualEl = document.getElementById(`${type}-manual-mode`);
+        if (tableEl) tableEl.classList.toggle('hidden', mode !== 'table');
+        if (manualEl) manualEl.classList.toggle('hidden', mode !== 'manual');
+        // Update active tab
+        if (btn) {
+            btn.parentElement.querySelectorAll('.input-mode-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+        }
+        if (type === 'tsumo') this._tsumoInputMode = mode;
+        else if (type === 'ron') this._ronInputMode = mode;
+        else if (type === 'ron2') this._ron2InputMode = mode;
+    },
+
+    generateScoreTable(mode) {
+        let containerId, isDealer, isTsumo;
+
+        if (mode === 'tsumo') {
+            containerId = 'tsumo-score-table';
+            if (this.selectedWinner === null) return;
+            isDealer = this.selectedWinner === this.state.dealerIndex;
+            isTsumo = true;
+        } else if (mode === 'ron') {
+            containerId = 'ron-score-table';
+            const winnerIdx = this.selectedWinners.length > 0 ? this.selectedWinners[0] : this.selectedWinner;
+            if (winnerIdx === null || winnerIdx === undefined) return;
+            isDealer = winnerIdx === this.state.dealerIndex;
+            isTsumo = false;
+        } else if (mode === 'ron2') {
+            containerId = 'ron2-score-table';
+            if (this.selectedWinners.length < 2) return;
+            isDealer = this.selectedWinners[1] === this.state.dealerIndex;
+            isTsumo = false;
+        }
+
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const rule = 'wrc'; // default rule for score table
+        const fuList = isTsumo ? [20, 30, 40, 50, 60, 70] : [25, 30, 40, 50, 60, 70];
+        const hanMax = 4;
+
+        let html = '<div class="score-table">';
+
+        // Header
+        html += '<div class="score-table-header">';
+        html += '<div class="score-table-cell score-table-corner">符＼翻</div>';
+        for (let han = 1; han <= hanMax; han++) {
+            html += `<div class="score-table-cell score-table-han">${han}翻</div>`;
+        }
+        html += '</div>';
+
+        // Rows for each fu
+        for (const fu of fuList) {
+            html += '<div class="score-table-row">';
+            html += `<div class="score-table-cell score-table-fu">${fu}符</div>`;
+            for (let han = 1; han <= hanMax; han++) {
+                // Skip invalid combos
+                if (fu === 20 && han < 2) { html += '<div class="score-table-cell">-</div>'; continue; }
+                if (fu === 25 && han < 2) { html += '<div class="score-table-cell">-</div>'; continue; }
+                if (fu === 25 && isTsumo) { html += '<div class="score-table-cell">-</div>'; continue; }
+
+                if (isTsumo) {
+                    const t = ScoreTable.getTsumoScore(fu, han, isDealer, rule);
+                    let label;
+                    if (isDealer) {
+                        label = `${t.allPayment.toLocaleString()}オール`;
+                    } else {
+                        label = `${t.koPayment.toLocaleString()}/${t.oyaPayment.toLocaleString()}`;
+                    }
+                    html += `<div class="score-table-cell"><button class="score-table-btn" onclick="Tenbou.selectScore('${mode}',${fu},${han},${isDealer})">${label}</button></div>`;
+                } else {
+                    const score = ScoreTable.getRonScore(fu, han, isDealer, rule);
+                    html += `<div class="score-table-cell"><button class="score-table-btn" onclick="Tenbou.selectScore('${mode}',${fu},${han},${isDealer})">${score.toLocaleString()}</button></div>`;
+                }
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        // Mangan+ buttons
+        html += '<div class="score-table-mangan">';
+        const manganLevels = [
+            { label: '満貫', han: 5 },
+            { label: '跳満', han: 6 },
+            { label: '倍満', han: 8 },
+            { label: '三倍満', han: 11 },
+            { label: '役満', han: 13 },
+        ];
+        for (const level of manganLevels) {
+            if (isTsumo) {
+                const t = ScoreTable.getManganTsumoScore(level.han, isDealer);
+                let label;
+                if (isDealer) {
+                    label = `${t.allPayment.toLocaleString()}オール`;
+                } else {
+                    label = `${t.koPayment.toLocaleString()}/${t.oyaPayment.toLocaleString()}`;
+                }
+                html += `<button class="score-table-btn mangan" onclick="Tenbou.selectScore('${mode}',0,${level.han},${isDealer})">${level.label}<br><span class="score-table-btn-sub">${label}</span></button>`;
+            } else {
+                const score = ScoreTable.getManganScore(level.han, isDealer);
+                html += `<button class="score-table-btn mangan" onclick="Tenbou.selectScore('${mode}',0,${level.han},${isDealer})">${level.label}<br><span class="score-table-btn-sub">${score.toLocaleString()}</span></button>`;
+            }
+        }
+        html += '</div>';
+
+        container.innerHTML = html;
+    },
+
+    selectScore(mode, fu, han, isDealer) {
+        const rule = 'wrc';
+        if (mode === 'tsumo') {
+            let t;
+            if (han >= 5) {
+                t = ScoreTable.getManganTsumoScore(han, isDealer);
+            } else {
+                t = ScoreTable.getTsumoScore(fu, han, isDealer, rule);
+            }
+            if (isDealer) {
+                document.getElementById('tsumo-ko').value = t.allPayment;
+                document.getElementById('tsumo-oya').value = '';
+            } else {
+                document.getElementById('tsumo-ko').value = t.koPayment;
+                document.getElementById('tsumo-oya').value = t.oyaPayment;
+            }
+            // Auto submit
+            this._tsumoInputMode = 'manual'; // ensure values are read
+            this.submitManual();
+        } else if (mode === 'ron') {
+            let score;
+            if (han >= 5) {
+                score = ScoreTable.getManganScore(han, isDealer);
+            } else {
+                score = ScoreTable.getRonScore(fu, han, isDealer, rule);
+            }
+            document.getElementById('ron-score').value = score;
+            // If no double-ron or only 1 winner, auto submit
+            if (!this.state.doubleRon || this.selectedWinners.length <= 1) {
+                this._ronInputMode = 'manual';
+                this.submitManual();
+            }
+        } else if (mode === 'ron2') {
+            let score;
+            if (han >= 5) {
+                score = ScoreTable.getManganScore(han, isDealer);
+            } else {
+                score = ScoreTable.getRonScore(fu, han, isDealer, rule);
+            }
+            document.getElementById('ron2-score').value = score;
+            // Both scores are set, auto submit
+            const score1 = parseInt(document.getElementById('ron-score').value) || 0;
+            if (score1 > 0) {
+                this._ronInputMode = 'manual';
+                this._ron2InputMode = 'manual';
+                this.submitManual();
+            }
+        }
     },
 
     renderPlayerSelect(containerId, onSelect) {
@@ -629,6 +906,48 @@ const Tenbou = {
                 onSelect(i);
             };
             container.appendChild(btn);
+        }
+    },
+
+    renderPlayerSelectMulti(containerId, onSelect) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        const selected = new Set();
+        for (let i = 0; i < 4; i++) {
+            const btn = document.createElement('button');
+            btn.className = 'player-select-btn';
+            btn.textContent = this.state.players[i];
+            btn.setAttribute('data-index', i);
+            btn.onclick = () => {
+                if (selected.has(i)) {
+                    selected.delete(i);
+                    btn.classList.remove('selected');
+                } else {
+                    if (selected.size >= 2) {
+                        // Max 2 winners for double-ron, deselect oldest
+                        const first = selected.values().next().value;
+                        selected.delete(first);
+                        container.querySelector(`[data-index="${first}"]`).classList.remove('selected');
+                    }
+                    selected.add(i);
+                    btn.classList.add('selected');
+                }
+                onSelect([...selected]);
+            };
+            container.appendChild(btn);
+        }
+    },
+
+    showDoubleRonSection() {
+        const section = document.getElementById('double-ron-section');
+        if (!section) return;
+        if (this.selectedWinners.length >= 2) {
+            section.classList.remove('hidden');
+            const ron2Score = document.getElementById('ron2-score');
+            if (ron2Score) ron2Score.value = '';
+            document.getElementById('ron2-score-table').innerHTML = '<p class="form-hint" style="text-align:center;padding:16px">先に和了者を選択してください</p>';
+        } else {
+            section.classList.add('hidden');
         }
     },
 
@@ -650,8 +969,28 @@ const Tenbou = {
             }
             this.hideManualInput();
         } else if (this.manualMode === 'ron') {
-            if (this.selectedWinner === null) { alert('和了者を選択してください'); return; }
             if (this.selectedLoser === null) { alert('放銃者を選択してください'); return; }
+
+            // Double-ron check
+            if (this.state.doubleRon && this.selectedWinners.length === 2) {
+                const w1 = this.selectedWinners[0];
+                const w2 = this.selectedWinners[1];
+                if (w1 === this.selectedLoser || w2 === this.selectedLoser) {
+                    alert('和了者と放銃者は異なる必要があります'); return;
+                }
+                const score1 = parseInt(document.getElementById('ron-score').value) || 0;
+                const score2 = parseInt(document.getElementById('ron2-score').value) || 0;
+                if (score1 <= 0 || score2 <= 0) { alert('両方の点数を入力してください'); return; }
+                this.processDoubleRon(w1, w2, this.selectedLoser, score1, score2);
+                this.hideManualInput();
+                return;
+            }
+
+            // Single ron
+            if (this.selectedWinner === null && this.selectedWinners.length > 0) {
+                this.selectedWinner = this.selectedWinners[0];
+            }
+            if (this.selectedWinner === null) { alert('和了者を選択してください'); return; }
             if (this.selectedWinner === this.selectedLoser) { alert('和了者と放銃者は異なる必要があります'); return; }
             const score = parseInt(document.getElementById('ron-score').value) || 0;
             if (score <= 0) { alert('点数を入力してください'); return; }
@@ -667,6 +1006,68 @@ const Tenbou = {
 
             this.processChip(this.selectedChipFrom, this.selectedChipTo, count);
             this.hideManualInput();
+        }
+    },
+
+    // ===== Process Double Ron =====
+    processDoubleRon(winner1, winner2, loserIdx, score1, score2) {
+        const scoreDiffs = [0, 0, 0, 0];
+        const honbaBonus = this.state.honba * 300;
+
+        // Both winners get their score + half of honba each
+        const total1 = score1 + honbaBonus;
+        const total2 = score2 + honbaBonus;
+
+        scoreDiffs[loserIdx] = -(total1 + total2);
+        // Split kyoutaku: first winner gets it (or split equally)
+        const kyoutaku1 = Math.ceil(this.state.kyoutaku / 2);
+        const kyoutaku2 = Math.floor(this.state.kyoutaku / 2);
+        scoreDiffs[winner1] = total1 + kyoutaku1;
+        scoreDiffs[winner2] = total2 + kyoutaku2;
+
+        for (let i = 0; i < 4; i++) {
+            this.state.scores[i] += scoreDiffs[i];
+        }
+
+        const w1Name = this.state.players[winner1];
+        const w2Name = this.state.players[winner2];
+        const loserName = this.state.players[loserIdx];
+        let desc = `【${this.getRoundName(this.state.currentRound)}】`;
+        desc += `${loserName}→${w1Name}(${score1.toLocaleString()})＆${w2Name}(${score2.toLocaleString()}) ダブロン`;
+        if (this.state.honba > 0) desc += ` (${this.state.honba}本場)`;
+        if (this.state.kyoutaku > 0) desc += ` +供託${this.state.kyoutaku.toLocaleString()}`;
+
+        const dealerWon = winner1 === this.state.dealerIndex || winner2 === this.state.dealerIndex;
+
+        const entry = {
+            type: 'ron', description: desc, scoreDiffs,
+            chipDiffs: [0, 0, 0, 0],
+            prevKyoutaku: this.state.kyoutaku, prevHonba: this.state.honba,
+            prevRound: this.state.currentRound, prevDealerIndex: this.state.dealerIndex
+        };
+
+        this.state.history.push(entry);
+        this.state.kyoutaku = 0;
+
+        this.renderPlayers();
+        this.renderHistory();
+        this.saveState();
+        if (navigator.vibrate) navigator.vibrate(50);
+
+        // 局進行: 親がダブロンで和了した場合は確認
+        this._gameEnded = false;
+        if (dealerWon) {
+            const nonDealerWon = (winner1 !== this.state.dealerIndex || winner2 !== this.state.dealerIndex);
+            // One of them is dealer, ask if round should advance
+            setTimeout(() => {
+                if (confirm('親がダブロンで和了しました。\n連荘しますか？\n\n「OK」→ 連荘（本場+1）\n「キャンセル」→ 次局へ')) {
+                    this.advanceRound(true); // 連荘
+                } else {
+                    this.advanceRound(false); // 次局へ
+                }
+            }, 300);
+        } else {
+            this.advanceRound(false);
         }
     },
 
@@ -1118,6 +1519,11 @@ const Tenbou = {
         document.getElementById('setup-chip-value').value = this.state.chipValue;
         document.getElementById('setup-tenpai-renchan').checked = this.state.tenpaiRenchan;
         document.getElementById('setup-agari-yame').checked = this.state.agariYame;
+        const doubleRonEl = document.getElementById('setup-double-ron');
+        if (doubleRonEl) {
+            doubleRonEl.checked = this.state.doubleRon || false;
+            document.getElementById('double-ron-label').textContent = this.state.doubleRon ? 'ダブロンあり' : 'ダブロンなし';
+        }
         // Restore game type button
         document.querySelectorAll('.game-type-btn').forEach(b => {
             b.classList.toggle('active', b.dataset.type === this.state.gameType);
