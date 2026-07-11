@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>麻雀計算 ストレステスト</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+        }
+
+        .pass {
+            color: #10b981;
+        }
+
+        .fail {
+            color: #ef4444;
+        }
+
+        .warn {
+            color: #f59e0b;
+        }
+
+        .summary {
+            font-size: 1.3em;
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px solid;
+            border-radius: 8px;
+        }
+
+        .summary.all-pass {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .summary.has-fail {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        #log {
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        button:hover {
+            background: #6366f1;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🀄 麻雀計算エンジン ストレステスト</h1>
+    <p>1000件のランダムシナリオ（同点、極端スコア、全5ルール）で検証</p>
+    <button onclick="runTests()">▶ テスト開始</button>
+    <div id="log"></div>
+
+    <script src="scoreTable.js"></script>
+    <script src="rules.js"></script>
+    <script src="calculator.js"></script>
+    <script>
+        function runTests() {
+            const logEl = document.getElementById('log');
+            logEl.innerHTML = '';
+            const logs = [];
+
+            function log(msg, cls) {
+                logs.push(`<span class="${cls || ''}">${msg}</span>`);
+            }
+
+            function randomInt(min, max) {
+                return Math.floor(Math.random() * (max - min + 1)) + min;
+            }
+
+            function generateRandomScores(total) {
+                const unit = 100;
+                const totalUnits = total / unit;
+                const cuts = [randomInt(0, totalUnits), randomInt(0, totalUnits), randomInt(0, totalUnits)].sort((a, b) => a - b);
+                const scores = [
+                    cuts[0] * unit,
+                    (cuts[1] - cuts[0]) * unit,
+                    (cuts[2] - cuts[1]) * unit,
+                    (totalUnits - cuts[2]) * unit
+                ];
+                for (let i = 3; i > 0; i--) { const j = randomInt(0, i);[scores[i], scores[j]] = [scores[j], scores[i]]; }
+                return scores;
+            }
+
+            function generateTiedScores(total) {
+                const unit = 100;
+                const patterns = [
+                    // 全員同点
+                    () => { const e = Math.floor(total / 4 / unit) * unit; return [e + (total - e * 4), e, e, e]; },
+                    // 2人同点（上位）
+                    () => {
+                        const t = Math.floor(total / 4 / unit) * unit + randomInt(0, 20) * unit;
+                        const r = total - t * 2; const a = Math.floor(r / 2 / unit) * unit;
+                        return [t, t, a, r - a];
+                    },
+                    // 2人同点（下位）
+                    () => {
+                        const h = Math.floor(total / 3 / unit) * unit + randomInt(0, 30) * unit;
+                        const t = Math.floor((total - h) / 3 / unit) * unit;
+                        const rem = total - h - t * 2;
+                        return [h, rem, t, t];
+                    },
+                    // 3人同点
+                    () => { const t = Math.floor(total / 4 / unit) * unit; return [total - t * 3, t, t, t]; },
+                    // 2組同点
+                    () => {
+                        const h = Math.floor(total / 3 / unit) * unit;
+                        const l = Math.floor((total - h * 2) / 2 / unit) * unit;
+                        return [h + (total - h * 2 - l * 2), h, l, l];
+                    }
+                ];
+                const scores = patterns[randomInt(0, patterns.length - 1)]();
+                for (let i = 3; i > 0; i--) { const j = randomInt(0, i);[scores[i], scores[j]] = [scores[j], scores[i]]; }
+                return scores;
+            }
+
+            function generateExtreme(total) {
+                const patterns = [
+                    () => [total - 3000, 1000, 1000, 1000],
+                    () => {
+                        const s = generateRandomScores(total);
+                        s[randomInt(0, 3)] = 0;
+                        const diff = total - s.reduce((a, b) => a + b, 0);
+                        const idx = s.findIndex(v => v > 0);
+                        s[idx < 0 ? 0 : idx] += diff;
+                        return s;
+                    },
+                    () => {
+                        const b = Math.floor(total / 4 / 100) * 100;
+                        return [b + (total - b * 4), b, b, b];
+                    }
+                ];
+                return patterns[randomInt(0, patterns.length - 1)]();
+            }
+
+            const rules = Object.keys(MahjongRules);
+            let totalTests = 0, passed = 0, failed = 0;
+            const errors = [];
+
+            log('='.repeat(60));
+            log(`ルール: ${rules.join(', ')}`);
+            log('='.repeat(60));
+
+            for (const rule of rules) {
+                const rc = MahjongRules[rule];
+                const totalPoints = rc.startingPoints * 4;
+                let ruleErrors = 0;
+
+                log(`\n--- ${rc.name} (${rule}) ---`);
+                log(`  持ち点: ${rc.startingPoints}, 合計: ${totalPoints}`);
+
+                for (let t = 0; t < 200; t++) {
+                    totalTests++;
+                    const riichiSticks = randomInt(0, 4);
+                    const playerTotal = totalPoints - riichiSticks * 1000;
+                    let currentScores;
+
+                    if (t < 80) currentScores = generateRandomScores(playerTotal);
+                    else if (t < 160) currentScores = generateTiedScores(playerTotal);
+                    else currentScores = generateExtreme(playerTotal);
+
+                    const round3TotalScores = Array.from({ length: 4 }, () => randomInt(-50, 50) * 1000);
+                    const dealerIndex = randomInt(0, 3);
+                    const honbaSticks = randomInt(0, 5);
+
+                    const gameState = {
+                        rule, players: ['東家', '南家', '西家', '北家'],
+                        currentScores, round3TotalScores,
+                        dealerIndex, riichiSticks, honbaSticks
+                    };
+
+                    try {
+                        // メイン計算
+                        const results = Calculator.calculateWinConditions(gameState);
+                        if (!Array.isArray(results) || results.length !== 4) throw new Error(`結果が4人分ない: ${results?.length}`);
+
+                        for (const r of results) {
+                            if (typeof r.currentRank !== 'number' || r.currentRank < 1 || r.currentRank > 4)
+                                throw new Error(`不正な順位: ${r.currentRank} (${r.playerName})`);
+                            if (!r.conditions) throw new Error(`conditions欠落: ${r.playerName}`);
+                        }
+
+                        // 放銃限度
+                        for (let pi = 0; pi < 4; pi++) {
+                            const rl = Calculator.calcMaxRonAllowed(gameState, pi);
+                            if (!Array.isArray(rl) || rl.length !== 3) throw new Error(`放銃限度不正: p=${pi}, len=${rl?.length}`);
+                            for (const r of rl) {
+                                if (typeof r.maxAllowed !== 'number') throw new Error(`放銃限度データ不正: ${JSON.stringify(r)}`);
+                            }
+                        }
+
+                        // ツモられ限度
+                        for (let pi = 0; pi < 4; pi++) {
+                            const tl = Calculator.calcTsumoLimit(gameState, pi);
+                            if (!Array.isArray(tl) || tl.length !== 3) throw new Error(`ツモ限度不正: p=${pi}, len=${tl?.length}`);
+                        }
+
+                        // 順位点ゼロサム検証
+                        const finalScores = currentScores.map((s, i) => ({ playerIndex: i, score: round3TotalScores[i] + s, olasuScore: s }));
+                        const rr = rc.calculateRankPoints(finalScores);
+                        if (!Array.isArray(rr) || rr.length !== 4) throw new Error(`順位点数不正: len=${rr?.length}`);
+
+                        const totalRP = rr.reduce((s, r) => s + r.rankPoints, 0);
+                        if (rule !== 'mleague' && Math.abs(totalRP) > 0.01)
+                            throw new Error(`順位点ゼロサム違反: ${totalRP.toFixed(2)}`);
+
+                        passed++;
+
+                    } catch (e) {
+                        failed++;
+                        ruleErrors++;
+                        errors.push({ rule, t, currentScores, riichiSticks, honbaSticks, dealerIndex, msg: e.message, stack: e.stack });
+                        if (errors.length <= 10) {
+                            log(`  ❌ #${t}: ${e.message}`, 'fail');
+                            log(`     スコア: [${currentScores.join(', ')}], 立直:${riichiSticks}, 積棒:${honbaSticks}`, 'fail');
+                        }
+                    }
+                }
+                log(ruleErrors === 0 ? `  ✅ 200件すべてパス` : `  ❌ ${ruleErrors}件のエラー`, ruleErrors === 0 ? 'pass' : 'fail');
+            }
+
+            // ScoreTable単体
+            log('\n--- ScoreTable 単体テスト ---');
+            for (const str of ['official', 'wrc']) {
+                try {
+                    const rh = ScoreTable.getAllHands(false, false, str);
+                    const th = ScoreTable.getAllHands(false, true, str);
+                    const drh = ScoreTable.getAllHands(true, false, str);
+                    const dth = ScoreTable.getAllHands(true, true, str);
+                    if (!rh.length || !th.length) throw new Error('手の一覧が空');
+
+                    for (const sc of [1000, 2000, 3900, 5200, 7700, 8000, 12000, 16000, 32000, 48000]) {
+                        const h = ScoreTable.findMaxRonHand(sc, false, str);
+                        if (h && h.score > sc) throw new Error(`findMaxRonHand: ${h.score} > ${sc}`);
+                        totalTests++; passed++;
+                    }
+                    log(`  ✅ ScoreTable(${str}): ron=${rh.length}, tsumo=${th.length}`, 'pass');
+                    totalTests += 4; passed += 4;
+                } catch (e) {
+                    log(`  ❌ ScoreTable(${str}): ${e.message}`, 'fail');
+                    failed++; totalTests++;
+                }
+            }
+
+            // サマリ
+            log('\n' + '='.repeat(60));
+            log(`総テスト数: ${totalTests}`);
+            log(`成功: ${passed} ✅`, 'pass');
+            log(`失敗: ${failed} ❌`, failed > 0 ? 'fail' : 'pass');
+            log(`成功率: ${(passed / totalTests * 100).toFixed(1)}%`);
+            log('\n' + (failed === 0 ? '🎉 全テスト合格！' : `⚠️ ${failed}件のエラーがあります`), failed === 0 ? 'pass' : 'fail');
+
+            // 表示
+            const summaryClass = failed === 0 ? 'all-pass' : 'has-fail';
+            logEl.innerHTML = `<div class="summary ${summaryClass}">総テスト: ${totalTests} | 成功: ${passed} | 失敗: ${failed} | 成功率: ${(passed / totalTests * 100).toFixed(1)}%</div>\n` + logs.join('\n');
+        }
+    </script>
+</body>
+
+</html>
