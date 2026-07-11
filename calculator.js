@@ -377,5 +377,164 @@ const Calculator = {
         const sameCount = outcome.filter(o => o.total === myTotal && o.playerIndex !== playerIndex).length;
         // 同点の場合は不利な方（上位に数える）で計算
         return higherCount + sameCount + 1;
+    },
+
+    /**
+     * テンパイ料による流局時の順位変動をシミュレート
+     * 各プレイヤーについて、テンパイ/ノーテンの全組み合わせをシミュレートする
+     * 
+     * テンパイ料ルール：
+     *   1人テンパイ: テンパイ者+3000、ノーテン者-1000×3
+     *   2人テンパイ: テンパイ者+1500×2、ノーテン者-1500×2
+     *   3人テンパイ: テンパイ者+1000×3、ノーテン者-3000
+     *   0人/4人テンパイ: 移動なし
+     * 
+     * @param {Object} gameState - ゲーム状態
+     * @param {number} playerIndex - 対象プレイヤー
+     * @returns {Object} テンパイシナリオ結果
+     */
+    calcTenpaiScenarios(gameState, playerIndex) {
+        const { currentScores, round3TotalScores, riichiSticks } = gameState;
+        const ruleConfig = MahjongRules[gameState.rule];
+
+        // 現在の順位を計算
+        const currentTotals = this.calcCurrentTotals(currentScores, round3TotalScores, ruleConfig);
+        const currentRank = this.getRankByTotal(currentTotals, playerIndex);
+
+        const results = {
+            playerIndex,
+            currentRank,
+            // 自分がノーテンの場合のシナリオ一覧
+            notenScenarios: [],
+            // 自分がテンパイの場合のシナリオ一覧
+            tenpaiScenarios: []
+        };
+
+        // 他3人のインデックス
+        const others = [0, 1, 2, 3].filter(i => i !== playerIndex);
+
+        // 他3人のテンパイ/ノーテン組み合わせを列挙（2^3=8パターン）
+        for (let mask = 0; mask < 8; mask++) {
+            const otherTenpai = others.map((idx, bit) => ({
+                playerIndex: idx,
+                isTenpai: !!(mask & (1 << bit))
+            }));
+
+            // 自分がノーテンの場合
+            const notenResult = this._simulateTenpaiPayment(
+                gameState, ruleConfig, playerIndex, false, otherTenpai, riichiSticks
+            );
+            results.notenScenarios.push(notenResult);
+
+            // 自分がテンパイの場合
+            const tenpaiResult = this._simulateTenpaiPayment(
+                gameState, ruleConfig, playerIndex, true, otherTenpai, riichiSticks
+            );
+            results.tenpaiScenarios.push(tenpaiResult);
+        }
+
+        return results;
+    },
+
+    /**
+     * テンパイ料移動をシミュレートして結果を返す（内部ヘルパー）
+     */
+    _simulateTenpaiPayment(gameState, ruleConfig, playerIndex, selfTenpai, otherTenpai, riichiSticks) {
+        const { currentScores, round3TotalScores } = gameState;
+
+        // テンパイ者のリスト
+        const tenpaiPlayers = [];
+        const notenPlayers = [];
+
+        if (selfTenpai) {
+            tenpaiPlayers.push(playerIndex);
+        } else {
+            notenPlayers.push(playerIndex);
+        }
+
+        otherTenpai.forEach(o => {
+            if (o.isTenpai) {
+                tenpaiPlayers.push(o.playerIndex);
+            } else {
+                notenPlayers.push(o.playerIndex);
+            }
+        });
+
+        const tenpaiCount = tenpaiPlayers.length;
+
+        // テンパイ料を計算
+        const newScores = [...currentScores];
+
+        if (tenpaiCount >= 1 && tenpaiCount <= 3) {
+            // テンパイ料テーブル（受け取り/支払い）
+            const payments = {
+                1: { receive: 3000, pay: 1000 },
+                2: { receive: 1500, pay: 1500 },
+                3: { receive: 1000, pay: 3000 }
+            };
+            const { receive, pay } = payments[tenpaiCount];
+
+            tenpaiPlayers.forEach(i => { newScores[i] += receive; });
+            notenPlayers.forEach(i => { newScores[i] -= pay; });
+        }
+        // 0人・4人テンパイは移動なし
+
+        // 流局後のスコアで順位・順位点を計算
+        const scoresWithIndex = newScores.map((score, i) => ({
+            playerIndex: i,
+            olasuScore: score,
+            score: round3TotalScores[i] + score
+        }));
+        const rankPointsResults = ruleConfig.calculateRankPoints(scoresWithIndex);
+
+        // 立直棒の処理: riichiOnDraw設定に基づく
+        // 'kyoutaku' = 供託として場に残る（誰も取得しない）
+        // 'first' = 1位が総取り
+        const riichiOnDraw = ruleConfig.riichiOnDraw || 'kyoutaku';
+
+        const outcome = newScores.map((score, i) => {
+            const rp = rankPointsResults.find(r => r.playerIndex === i);
+            const rankPoint = rp.rankPoints * 1000;
+            return {
+                playerIndex: i,
+                total: round3TotalScores[i] + score + rankPoint,
+                rankPoint,
+                riichiBonus: 0
+            };
+        });
+
+        if (riichiOnDraw === 'first' && riichiSticks > 0) {
+            // 1位を判定して立直棒を付与
+            const firstPlace = outcome.reduce((best, cur) =>
+                cur.total > best.total ? cur : best
+            );
+            firstPlace.riichiBonus = riichiSticks * 1000;
+            firstPlace.total += riichiSticks * 1000;
+        }
+
+        const rank = this.getRankFromOutcome(outcome, playerIndex);
+
+        // 現在の順位を再計算
+        const currentTotals = this.calcCurrentTotals(currentScores, round3TotalScores, ruleConfig);
+        const currentRank = this.getRankByTotal(currentTotals, playerIndex);
+
+        // 他プレイヤーのテンパイ状態の説明を生成
+        const otherTenpaiNames = otherTenpai
+            .filter(o => o.isTenpai)
+            .map(o => gameState.players[o.playerIndex]);
+
+        return {
+            tenpaiPlayers: tenpaiPlayers.slice(),
+            notenPlayers: notenPlayers.slice(),
+            tenpaiCount,
+            otherTenpaiNames,
+            selfTenpai,
+            resultRank: rank,
+            currentRank,
+            rankChanged: rank !== currentRank,
+            improved: rank < currentRank,
+            worsened: rank > currentRank,
+            outcome
+        };
     }
 };

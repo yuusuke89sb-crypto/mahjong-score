@@ -35,6 +35,8 @@
       <h1>🀄 麻雀点数計算</h1>
       <p>大会用条件計算ツール</p>
       <button id="history-btn" class="btn-history" onclick="App.showHistory()" title="対局履歴">📜 履歴</button>
+      <a href="tenbou.html" class="btn-history"
+        style="right: var(--spacing-md); left: auto; top: calc(var(--spacing-md) + 36px);" title="点棒管理">🀄 点棒管理</a>
     </header>
 
     <!-- 対局履歴画面 -->
@@ -150,6 +152,13 @@
           <div>
             <label class="form-label" style="font-size: var(--font-size-xs);">オカ（1位ボーナス）</label>
             <input type="number" id="custom-oka" class="form-input" value="0" oninput="App.updateCustomRule()">
+          </div>
+          <div style="margin-top: var(--spacing-md);">
+            <label class="form-label" style="font-size: var(--font-size-xs);">流局時の立直棒</label>
+            <select id="custom-riichi-on-draw" class="form-input" onchange="App.updateCustomRule()">
+              <option value="first">1位が総取り</option>
+              <option value="kyoutaku">供託（場に残る）</option>
+            </select>
           </div>
         </div>
 

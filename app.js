@@ -207,11 +207,19 @@ const App = {
             }));
             console.log('ツモられ限度:', tsumoLimits);
 
+            // テンパイ料シミュレーション
+            const tenpaiScenarios = results.map(r => ({
+                playerIndex: r.playerIndex,
+                currentRank: r.currentRank,
+                scenarios: Calculator.calcTenpaiScenarios(this.gameState, r.playerIndex)
+            }));
+            console.log('テンパイシナリオ:', tenpaiScenarios);
+
             // 入力データを保存
             this.saveToLocalStorage();
 
             // 結果を表示
-            this.displayResults(results, ronLimits, tsumoLimits);
+            this.displayResults(results, ronLimits, tsumoLimits, tenpaiScenarios);
             console.log('結果表示完了');
 
             // 履歴に保存
@@ -305,7 +313,7 @@ const App = {
     /**
      * 結果を表示
      */
-    displayResults(results, ronLimits, tsumoLimits) {
+    displayResults(results, ronLimits, tsumoLimits, tenpaiScenarios) {
         const container = document.getElementById('results-container');
         container.innerHTML = '';
         this.lastResults = results;
@@ -404,6 +412,12 @@ const App = {
                 if (tsumoLimit) {
                     html += this.formatTsumoLimit(tsumoLimit.limits);
                 }
+            }
+
+            // テンパイ料シミュレーション（全プレイヤーに表示）
+            const tenpaiScenario = tenpaiScenarios.find(r => r.playerIndex === playerResult.playerIndex);
+            if (tenpaiScenario) {
+                html += this.formatTenpaiScenarios(tenpaiScenario.scenarios);
             }
 
             html += '</div>'; // player-body閉じ
@@ -988,11 +1002,13 @@ const App = {
         const uma3 = parseFloat(document.getElementById('custom-uma-3').value) || 0;
         const uma4 = parseFloat(document.getElementById('custom-uma-4').value) || 0;
         const oka = parseFloat(document.getElementById('custom-oka').value) || 0;
+        const riichiOnDraw = document.getElementById('custom-riichi-on-draw').value || 'first';
 
         MahjongRules.custom.startingPoints = starting;
         MahjongRules.custom.returnPoints = returnPts;
         MahjongRules.custom.uma = { 1: uma1, 2: uma2, 3: uma3, 4: uma4 };
         MahjongRules.custom.oka = oka;
+        MahjongRules.custom.riichiOnDraw = riichiOnDraw;
 
         // オーラススコアのデフォルト値も更新
         if (this.selectedRule === 'custom') {
@@ -1017,7 +1033,8 @@ const App = {
             startingPoints: MahjongRules.custom.startingPoints,
             returnPoints: MahjongRules.custom.returnPoints,
             uma: MahjongRules.custom.uma,
-            oka: MahjongRules.custom.oka
+            oka: MahjongRules.custom.oka,
+            riichiOnDraw: MahjongRules.custom.riichiOnDraw
         };
         localStorage.setItem('mahjong-custom-rule', JSON.stringify(config));
     },
@@ -1034,6 +1051,7 @@ const App = {
             MahjongRules.custom.returnPoints = config.returnPoints;
             MahjongRules.custom.uma = config.uma;
             MahjongRules.custom.oka = config.oka;
+            MahjongRules.custom.riichiOnDraw = config.riichiOnDraw || 'first';
 
             // UIに反映
             document.getElementById('custom-starting').value = config.startingPoints;
@@ -1043,6 +1061,7 @@ const App = {
             document.getElementById('custom-uma-3').value = config.uma[3];
             document.getElementById('custom-uma-4').value = config.uma[4];
             document.getElementById('custom-oka').value = config.oka;
+            document.getElementById('custom-riichi-on-draw').value = config.riichiOnDraw || 'first';
         } catch (e) {
             console.error('カスタムルール読込エラー:', e);
         }
@@ -1213,6 +1232,111 @@ const App = {
         const encoded = encodeURIComponent(text);
         const lineUrl = `https://line.me/R/share?text=${encoded}`;
         window.open(lineUrl, '_blank');
+    },
+
+    /**
+     * テンパイ料シミュレーション結果をフォーマット
+     */
+    formatTenpaiScenarios(scenarios) {
+        const { currentRank, notenScenarios, tenpaiScenarios } = scenarios;
+
+        // 順位変動があるシナリオのみに絞り込み
+        const notenDanger = notenScenarios.filter(s => s.worsened);
+        const notenChance = notenScenarios.filter(s => s.improved);
+        const tenpaiDanger = tenpaiScenarios.filter(s => s.worsened);
+        const tenpaiChance = tenpaiScenarios.filter(s => s.improved);
+
+        // 順位変動がまったくなければ簡略表示
+        const hasAnyChange = notenDanger.length > 0 || notenChance.length > 0 ||
+            tenpaiDanger.length > 0 || tenpaiChance.length > 0;
+        const ruleConfig = MahjongRules[this.gameState.rule];
+        const riichiOnDraw = ruleConfig.riichiOnDraw || 'kyoutaku';
+        const riichiSticks = this.gameState.riichiSticks || 0;
+        const riichiNote = riichiSticks > 0
+            ? (riichiOnDraw === 'first'
+                ? `<br>📍 立直棒${riichiSticks}本（${riichiSticks * 1000}点）→ 1位が総取り`
+                : `<br>📍 立直棒${riichiSticks}本（${riichiSticks * 1000}点）→ 供託（場に残る）`)
+            : '';
+
+        let html = `
+      <div class="condition-item" style="border-left: 3px solid var(--color-info, #8b5cf6);">
+        <h4>🏁 流局時テンパイ料シミュレーション</h4>
+        <p style="font-size: var(--font-size-xs); color: var(--color-text-secondary); margin-bottom: var(--spacing-sm);">テンパイ/ノーテンの組み合わせで順位がどう変動するか${riichiNote}</p>
+    `;
+
+        if (!hasAnyChange) {
+            html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e);">
+              ✅ どのテンパイ組み合わせでも順位変動なし（${currentRank}位のまま）
+            </p>`;
+            html += `</div>`;
+            return html;
+        }
+
+        // --- 自分がノーテンの場合 ---
+        html += `<div style="margin-bottom: var(--spacing-md);">`;
+        html += `<p style="font-weight: 600; font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">📌 自分がノーテンの場合：</p>`;
+
+        if (notenDanger.length === 0 && notenChance.length === 0) {
+            html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e); margin-left: var(--spacing-md);">
+              ✅ どのパターンでも${currentRank}位維持
+            </p>`;
+        } else {
+            // 全8パターンを表示
+            notenScenarios.forEach(s => {
+                const label = s.otherTenpaiNames.length === 0
+                    ? '全員ノーテン'
+                    : `${s.otherTenpaiNames.join('・')}がテンパイ`;
+
+                if (s.worsened) {
+                    html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444); margin-left: var(--spacing-md);">
+                      ⚠️ ${label} → <strong>${s.resultRank}位に転落</strong>
+                    </p>`;
+                } else if (s.improved) {
+                    html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e); margin-left: var(--spacing-md);">
+                      🎉 ${label} → <strong>${s.resultRank}位に浮上！</strong>
+                    </p>`;
+                } else {
+                    html += `<p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-left: var(--spacing-md);">
+                      ✅ ${label} → ${s.resultRank}位維持
+                    </p>`;
+                }
+            });
+        }
+        html += `</div>`;
+
+        // --- 自分がテンパイの場合 ---
+        html += `<div>`;
+        html += `<p style="font-weight: 600; font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs);">📌 自分がテンパイの場合：</p>`;
+
+        if (tenpaiDanger.length === 0 && tenpaiChance.length === 0) {
+            html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e); margin-left: var(--spacing-md);">
+              ✅ どのパターンでも${currentRank}位維持
+            </p>`;
+        } else {
+            tenpaiScenarios.forEach(s => {
+                const label = s.otherTenpaiNames.length === 0
+                    ? '他家全員ノーテン'
+                    : `${s.otherTenpaiNames.join('・')}もテンパイ`;
+
+                if (s.worsened) {
+                    html += `<p style="font-size: var(--font-size-sm); color: var(--color-danger, #ef4444); margin-left: var(--spacing-md);">
+                      ⚠️ ${label} → <strong>${s.resultRank}位に転落</strong>
+                    </p>`;
+                } else if (s.improved) {
+                    html += `<p style="font-size: var(--font-size-sm); color: var(--color-success, #22c55e); margin-left: var(--spacing-md);">
+                      🎉 ${label} → <strong>${s.resultRank}位に浮上！</strong>
+                    </p>`;
+                } else {
+                    html += `<p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-left: var(--spacing-md);">
+                      ✅ ${label} → ${s.resultRank}位維持
+                    </p>`;
+                }
+            });
+        }
+        html += `</div>`;
+
+        html += `</div>`;
+        return html;
     },
 
     /**

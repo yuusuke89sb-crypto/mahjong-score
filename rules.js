@@ -13,6 +13,7 @@ const MahjongRules = {
         startingPoints: 30000,
         returnPoints: 30000,
         scoreTableRule: 'official', // 30符4翻は切り上げなし
+        riichiOnDraw: 'kyoutaku',
 
         /**
          * 順位点を計算
@@ -111,9 +112,11 @@ const MahjongRules = {
         startingPoints: 30000,
         returnPoints: 30000,
         scoreTableRule: 'wrc', // 30符4翻は切り上げ満貫
+        riichiOnDraw: 'kyoutaku', // 流局時の立直棒: 供託として場に残る
 
         calculateRankPoints(finalScores) {
-            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+            // オーラス単体の点数で順位を決定
+            const sorted = [...finalScores].sort((a, b) => b.olasuScore - a.olasuScore);
 
             const rankPointsTable = {
                 1: 15,
@@ -127,10 +130,10 @@ const MahjongRules = {
             let i = 0;
 
             while (i < sorted.length) {
-                const currentScore = sorted[i].score;
+                const currentScore = sorted[i].olasuScore;
                 const sameScorePlayers = [];
 
-                while (i < sorted.length && sorted[i].score === currentScore) {
+                while (i < sorted.length && sorted[i].olasuScore === currentScore) {
                     sameScorePlayers.push(sorted[i]);
                     i++;
                 }
@@ -168,9 +171,11 @@ const MahjongRules = {
         startingPoints: 30000,
         returnPoints: 30000,
         scoreTableRule: 'wrc', // 30符4翻は切り上げ満貫
+        riichiOnDraw: 'kyoutaku', // 流局時の立直棒: 供託として場に残る
 
         calculateRankPoints(finalScores) {
-            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+            // オーラス単体の点数で順位を決定
+            const sorted = [...finalScores].sort((a, b) => b.olasuScore - a.olasuScore);
 
             const rankPointsTable = {
                 1: 30,
@@ -184,10 +189,10 @@ const MahjongRules = {
             let i = 0;
 
             while (i < sorted.length) {
-                const currentScore = sorted[i].score;
+                const currentScore = sorted[i].olasuScore;
                 const sameScorePlayers = [];
 
-                while (i < sorted.length && sorted[i].score === currentScore) {
+                while (i < sorted.length && sorted[i].olasuScore === currentScore) {
                     sameScorePlayers.push(sorted[i]);
                     i++;
                 }
@@ -226,9 +231,11 @@ const MahjongRules = {
         startingPoints: 25000,
         returnPoints: 30000,
         scoreTableRule: 'wrc', // 切り上げ満貫
+        riichiOnDraw: 'kyoutaku', // 流局時の立直棒: 供託として場に残る
 
         calculateRankPoints(finalScores) {
-            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+            // オーラス単体の点数で順位を決定
+            const sorted = [...finalScores].sort((a, b) => b.olasuScore - a.olasuScore);
 
             const umaTable = {
                 1: 30,
@@ -242,10 +249,10 @@ const MahjongRules = {
             let i = 0;
 
             while (i < sorted.length) {
-                const currentScore = sorted[i].score;
+                const currentScore = sorted[i].olasuScore;
                 const sameScorePlayers = [];
 
-                while (i < sorted.length && sorted[i].score === currentScore) {
+                while (i < sorted.length && sorted[i].olasuScore === currentScore) {
                     sameScorePlayers.push(sorted[i]);
                     i++;
                 }
@@ -292,9 +299,11 @@ const MahjongRules = {
         startingPoints: 30000,
         returnPoints: 30000,
         scoreTableRule: 'wrc', // 切り上げ満貫
+        riichiOnDraw: 'kyoutaku', // 流局時の立直棒: 供託として場に残る
 
         calculateRankPoints(finalScores) {
-            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+            // オーラス単体の点数で順位を決定
+            const sorted = [...finalScores].sort((a, b) => b.olasuScore - a.olasuScore);
 
             const rankPointsTable = {
                 1: 30,
@@ -308,10 +317,10 @@ const MahjongRules = {
             let i = 0;
 
             while (i < sorted.length) {
-                const currentScore = sorted[i].score;
+                const currentScore = sorted[i].olasuScore;
                 const sameScorePlayers = [];
 
-                while (i < sorted.length && sorted[i].score === currentScore) {
+                while (i < sorted.length && sorted[i].olasuScore === currentScore) {
                     sameScorePlayers.push(sorted[i]);
                     i++;
                 }
@@ -349,21 +358,23 @@ const MahjongRules = {
         startingPoints: 25000,
         returnPoints: 30000,
         scoreTableRule: 'wrc', // 切り上げ満貫
+        riichiOnDraw: 'first', // 流局時の立直棒: 1位総取り（デフォルト）
         uma: { 1: 30, 2: 10, 3: -10, 4: -30 },
         oka: 0,
 
         calculateRankPoints(finalScores) {
-            const sorted = [...finalScores].sort((a, b) => b.score - a.score);
+            // オーラス単体の点数で順位を決定
+            const sorted = [...finalScores].sort((a, b) => b.olasuScore - a.olasuScore);
 
             const results = [];
             let currentRank = 1;
             let i = 0;
 
             while (i < sorted.length) {
-                const currentScore = sorted[i].score;
+                const currentScore = sorted[i].olasuScore;
                 const sameScorePlayers = [];
 
-                while (i < sorted.length && sorted[i].score === currentScore) {
+                while (i < sorted.length && sorted[i].olasuScore === currentScore) {
                     sameScorePlayers.push(sorted[i]);
                     i++;
                 }
